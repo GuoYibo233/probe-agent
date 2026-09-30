@@ -40,3 +40,37 @@
     failure (SyntaxError or NameError) instead of running print(None) and splicing a successful 'None'
     result into the stream; the spec row and the resumed text of such a fire change, and score follows
     through the folded inject key
+- stage: build
+  era: 3
+  date: 2026-09-29
+  why: Aborted steps are skipped instead of refusing the build over a share of aborted records; the gate
+    field build.max_abort_frac is removed.
+- stage: train
+  era: 2
+  date: 2026-09-29
+  why: A setting with train.import_from takes over a previous-pipeline checkpoint into best/ (served window
+    from train.max_len, the source's calibration in meta.json) instead of training and predicting.
+- stage: eval
+  era: 2
+  date: 2026-09-29
+  why: An eval whose train run is an import writes the imported calibration (temperature, theta sweep,
+    chosen thetas) into its report marked imported, with the numbers computed from prediction rows absent,
+    instead of fitting.
+- stage: sample
+  era: 1
+  from: 6279b5c0de7064e4b5eafcd64829d8737437182a
+  same: 0304e1c302b4dadb3a764c6fd59954cd6c09bad5
+  date: 2026-09-30
+  why: The agent service takes its tensor-parallel size from the launcher flag, equal to the table row's
+    value on cards of the declared size, and records gpus and tensor_parallel_size in its endpoint file;
+    the serve line and the run's output on the table row's cards are unchanged, and an inject run's eval
+    reader is unchanged for a fitted eval.
+- stage: inject
+  era: 2
+  from: 6279b5c0de7064e4b5eafcd64829d8737437182a
+  same: 0304e1c302b4dadb3a764c6fd59954cd6c09bad5
+  date: 2026-09-30
+  why: The agent service takes its tensor-parallel size from the launcher flag, equal to the table row's
+    value on cards of the declared size, and records gpus and tensor_parallel_size in its endpoint file;
+    the serve line and the run's output on the table row's cards are unchanged, and an inject run's eval
+    reader is unchanged for a fitted eval.

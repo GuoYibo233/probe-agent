@@ -33,8 +33,7 @@ version: 1.0.0
 
 3. **The gates are in the programs.** Every gate that can stop a stage is held by the
    program that can fail it, and is listed in contracts 2.5, as amended by
-   `.scratch/from-zero/contract-errata.md`: `build`'s record completeness, its abort
-   share, its split gates (a task id in two splits, a task id in none of the
+   `.scratch/from-zero/contract-errata.md`: `build`'s record completeness, its split gates (a task id in two splits, a task id in none of the
    environment's official lists) and its row gates (an empty `text`, a `depth` outside
    `[0, 1]`, a text whose thinking part is not a prefix of the record's thinking);
    `train`'s alignment gate; the generator eval's **three** gates — the referenced
@@ -46,12 +45,16 @@ version: 1.0.0
    gate of every stage (contracts 3.3: a directory is read only under code its launch
    commits ran, or code a same row of `jobs/versions.yaml` judges the same), the launch
    gate, the dirty-tree gate and the card reservation.
-   Two things that read like build gates are not gates: an event whose call `build_call`
+   Three things that read like build gates are not gates: an event whose call `build_call`
    refuses, that fails the round-trip gate, or whose non-null action `split_args` cannot
    parse is skipped and counted under `counts.events_skipped_no_call`; `report.md`
    carries that count and, for the `build_call`-refusal and round-trip cases only, one
    line per event naming the record, the step and the reason (the errata's two rulings
-   of 2026-09-17 and 2026-09-18: the build reports a rare data problem and goes on). And
+   of 2026-09-17 and 2026-09-18: the build reports a rare data problem and goes on). A
+   record whose final row carries an abort is used, and only its aborted step (a gen row
+   with no env row at the final row's `steps`) is skipped and counted under
+   `counts.events_skipped_abort`, beside `counts.records_with_abort` (owner ruling
+   2026-09-29, which removed the abort-share gate and its setting field). And
    `build.max_examples` is a cap per split, applied after the split column is assigned,
    not a gate.
 

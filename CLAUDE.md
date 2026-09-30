@@ -6,15 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## The tree
 
-The tree is fixed and is never changed by an agent (moves, splits and renames
-are proposals only): `notes/plans/2026-09-14-structure-from-zero.md` (fourth
-draft) with the fixes in `notes/plans/2026-09-17-structure-review-synthesis.md`
-is the file list, `notes/plans/2026-09-17-contracts.md` is every interface
-that crosses a file boundary, cited by section and never edited, and
-`notes/plans/2026-09-17-construction-plan.md` recorded who built what.
-`README.md` holds one line per file: what it does, what it imports, who
-imports it, what it reads, what it writes, and its venv — read it before
-touching a file, and update the file's own line whenever you change it.
+The tree is fixed and is never changed by an agent unless gyb specifies what to change.
 
 The code layers are `constants/` (the fixed paths and lookups), `data/`
 (formats and the probe input builder), `experimental_settings/` (the setting
@@ -62,8 +54,8 @@ The three workflows and their stage lists are `baseline` (sample, score),
 `sample`, `inject` and `train` are launched as tmux pieces on cluster cards
 by `jobs/launch.py`; `build`, `eval` and `score` run in place on the CPU.
 The GPU half of an evaluation is the last step of `train` (it writes the
-prediction rows), so `eval/` only reads what is on disk and never imports
-torch. A run directory is keyed by stage plus a 12-hex hash of the setting's
+prediction rows), so `eval/` only reads what is on disk.
+A run directory is keyed by stage plus a 12-hex hash of the setting's
 diff from the schema defaults, with the stage's era from `jobs/versions.yaml`
 (the code-era table) folded in; the code itself is not in the key. A finished
 directory is reused, a partial one is continued, and an edited setting or a
@@ -165,8 +157,6 @@ together with redirects.
   weights live under `/net/tokyo100-10g/data/str01_01/y-guo/models`.
 - Environments are managed with uv, always. This machine has `python3`,
   not `python`.
-- Complete isolation from `/home/y-guo/ACL2026`: never read or write its
-  data, code, or results.
 - No guessing about data results: without having read the output file or
   the code that produced a number, make no judgment or interpretation
   about it; report results as facts only, no praise, no advice on which

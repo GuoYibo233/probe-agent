@@ -307,7 +307,9 @@ def parse_cards(tokens: list[str]) -> dict[str, list[int]]:
 def restrict_to_pool(free_by_host: dict, pool: dict[str, list[int]] | None) -> dict:
     """The cards a launch may claim: every free card when no pool is named, the pool when one
     is. A pool is the caller's statement of where this launch runs, so a pool card that is not
-    free refuses the launch, naming the card, rather than moving the launch to another card."""
+    free refuses the launch, naming the card, rather than moving the launch to another card.
+    The cards of the agent server a launch attaches to are named in its pool and held by that
+    server; `launch()` takes them out of the pool before this call (`_pool_without`)."""
     if pool is None:
         return free_by_host
     busy = [f"{host}:{i}" for host, ids in pool.items()
@@ -317,9 +319,20 @@ def restrict_to_pool(free_by_host: dict, pool: dict[str, list[int]] | None) -> d
     return {host: list(ids) for host, ids in pool.items()}
 
 
+def _pool_without(pool: dict[str, list[int]], host: str, ids: list[int]) -> dict[str, list[int]]:
+    """A copy of `pool` with the cards `ids` of `host` taken out."""
+    return {h: [i for i in cards if not (h == host and i in ids)] for h, cards in pool.items()}
+
+
 def remove_claimed(pool: dict[str, list[int]], pieces: list[dict]) -> None:
-    """Take the cards these placed pieces hold out of the pool, in place."""
+    """Take the cards these placed pieces hold out of the pool, in place, so the next launch of
+    the same call claims from what is left. The cards of an agent service that started its own
+    server stay in the pool: the next launch attaches to that server when it serves the same
+    `result:` block, and an attach needs the server's cards in the pool (`_find_attach_target`);
+    a launch that cannot attach finds those cards busy and is refused by `restrict_to_pool`."""
     for piece in pieces:
+        if str(piece.get("endpoint_file") or "").startswith("service_agent_"):
+            continue
         held = [int(g) for g in str(piece.get("gpus") or "").split(",") if g.strip() != ""]
         host = piece.get("host")
         if host in pool:
@@ -333,6 +346,34 @@ def fitting_cards(free_by_host: dict, host: str, min_card_gib: int) -> list[int]
     return [i for i in free_by_host.get(host) or [] if memory[i] >= min_card_gib]
 
 
+def cards_for(free_by_host: dict, host: str, n: int, min_card_gib: int,
+              combine: bool) -> list[int] | None:
+    """The free cards of `host` one piece takes, or `None` when `host` cannot hold it.
+
+    A piece declared for `n` cards of at least `min_card_gib` GiB takes the first `n` such
+    cards in the free list's order. With `combine` (an agent service that starts its own server
+    on a named pool), a host whose free cards are all smaller than `min_card_gib` holds the
+    piece on the fewest of them whose memory together reaches the `n * min_card_gib` GiB the
+    piece was declared for, largest cards first, returned in the free list's order; the server
+    then runs tensor-parallel over that many cards. A host with some cards of the declared size
+    and too few of them holds nothing."""
+    fitting = fitting_cards(free_by_host, host, min_card_gib)
+    if len(fitting) >= n:
+        return fitting[:n]
+    if not combine or fitting:
+        return None
+    memory = registry.card_memory_gib()[host]
+    free = list(free_by_host.get(host) or [])
+    chosen: list[int] = []
+    total = 0
+    for i in sorted(free, key=lambda i: -memory[i]):
+        chosen.append(i)
+        total += memory[i]
+        if total >= n * min_card_gib:
+            return [i for i in free if i in chosen]
+    return None
+
+
 def _declared_card_gib(agent_alias: str) -> int:
     """The card size an agent service was declared for: the smallest card of its model table
     row's serving host. The owner chose that host because its cards hold the model, so a server
@@ -342,21 +383,24 @@ def _declared_card_gib(agent_alias: str) -> int:
 
 
 def place(kind, cards_needed, free_by_host, *, min_card_gib, serving_host, prefer_host,
-          attached) -> str | None:
+          attached, combine) -> str | None:
     """Which host a piece lands on (3.4). `loop` and a `service_probe` with
     no card go to `login_host`; an `attached` agent service goes to
     `serving_host`, the host of the live server it attaches to, taking no card
     and no card search; everything else (an agent service that starts its own
     server, a checkpoint-loading `service_probe`, `train`) takes the first host
-    with `cards_needed` free cards of at least `min_card_gib` GiB each,
-    preferring `prefer_host`. `None` when no host qualifies."""
+    that `cards_for` says holds it -- `cards_needed` free cards of at least
+    `min_card_gib` GiB each, or with `combine` the fewest smaller cards that
+    together reach that size -- preferring `prefer_host`. `None` when no host
+    qualifies."""
     if kind == "loop":
         return _login_host()
     if kind == "service_probe" and cards_needed == 0:
         return _login_host()
     if kind == "service_agent" and attached:
         return serving_host
-    # A piece lands only on cards at least as large as the cards it was declared for. An agent
+    # A piece lands only on cards at least as large as the cards it was declared for, or, for an
+    # agent service on a named pool, on several smaller cards that together are. An agent
     # service that starts its own server was declared for its table row's serving host, so
     # `min_card_gib` is that host's smallest card (`_declared_card_gib`) and the serving host is
     # `prefer_host`; a train piece and a checkpoint-loading probe service name no host, so their
@@ -368,7 +412,7 @@ def place(kind, cards_needed, free_by_host, *, min_card_gib, serving_host, prefe
         if host not in candidates:
             candidates.append(host)
     for host in candidates:
-        if len(fitting_cards(free_by_host, host, min_card_gib)) >= cards_needed:
+        if cards_for(free_by_host, host, cards_needed, min_card_gib, combine) is not None:
             return host
     return None
 
@@ -397,7 +441,7 @@ def piece_command(python, module, run_dir, piece, n, gpus, log) -> str:
 
 
 def _agent_service_cmd(python, run_dir, model_alias, host, port, gpus, replica, *,
-                        attach_only, attached_to, log) -> str:
+                        tensor_parallel_size, attach_only, attached_to, log) -> str:
     """7.1's serve line, plus the `--replica` and `--attached-to` flags of
     errata 7.1/1.5, plus `--host`: the launcher places the service, so the
     launcher tells it which host its endpoint file names. `--gpus` is unbracketed on every serve line (7.1), so it
@@ -405,13 +449,19 @@ def _agent_service_cmd(python, run_dir, model_alias, host, port, gpus, replica, 
     card-less, attached replica's empty value survives tmux's shell as a
     real, empty token — `--gpus ''` — instead of vanishing under ordinary
     word-splitting and shifting every flag after it onto the previous
-    flag's place."""
+    flag's place. A server that starts gets `--tensor-parallel-size`, the
+    number of cards the launcher claimed for it (`cards_for`): the table row's
+    serving value on cards of the declared size, more on smaller cards that
+    together reach it. It is a serving fact, never keyed (6.1). An attached
+    replica starts no server and gets none."""
     parts = [python, "-m", "models.agent_models.service", "serve",
               "--run-dir", str(run_dir), "--model", model_alias,
               "--host", str(host), "--port", str(port), "--gpus", shlex.quote(gpus)]
     parts += ["--replica", str(replica)]
     if attach_only:
         parts += ["--attach-only", "--attached-to", attached_to]
+    else:
+        parts += ["--tensor-parallel-size", str(tensor_parallel_size)]
     return f"cd {_repo_root()} && {' '.join(parts)} 2>&1 | tee -a {log}"
 
 
@@ -676,35 +726,44 @@ def _run_id_of_meta(meta: dict) -> str | None:
     return f"{stage}-{key}" if stage and key else None
 
 
+def _attached_to_of(run_dir: Path) -> set[str]:
+    """The run ids this run's `service_*.json` documents name in `attached_to`: the runs whose
+    agent servers this run uses."""
+    named: set[str] = set()
+    for path in Path(run_dir).glob("service_*.json"):
+        doc = _read_json(path)
+        if doc and doc.get("attached_to") is not None:
+            named.add(doc["attached_to"])
+    return named
+
+
+def _servers_in_use(except_run_id: str | None = None) -> set[str]:
+    """The run ids whose agent servers an open run uses: every run id an open run's
+    `service_*.json` names in `attached_to`, the documents of `except_run_id` left out."""
+    in_use: set[str] = set()
+    for row in registry.open_runs():
+        if row.get("run_id") == except_run_id:
+            continue
+        run_dir = Path(row.get("dir", ""))
+        if run_dir.is_dir():
+            in_use |= _attached_to_of(run_dir)
+    return in_use
+
+
 def _attached_elsewhere(run_id: str) -> bool:
     """Whether another live run's `service_*.json` names `run_id` in its
     `attached_to` field (the test `run.py kill` also uses, 8.6)."""
-    for row in registry.open_runs():
-        if row.get("run_id") == run_id:
-            continue
-        run_dir = Path(row.get("dir", ""))
-        if not run_dir.is_dir():
-            continue
-        for path in run_dir.glob("service_*.json"):
-            doc = _read_json(path)
-            if doc and doc.get("attached_to") == run_id:
-                return True
-    return False
+    return run_id in _servers_in_use(except_run_id=run_id)
 
 
-def teardown_services(run_dir) -> list[str]:
-    """End every `kind: service` piece of this run (`ssh <host> tmux
-    kill-session -t <session>`, local with no `ssh` when the host
-    normalises to `login_host`, errata wave-4 precheck), skipped whole when
-    this run's own `run_id` appears in another live run's `attached_to`
-    (2.3). Returns the sessions actually ended."""
-    run_dir = Path(run_dir)
-    meta = _read_json(run_dir / "meta.json") or {}
-    run_id = _run_id_of_meta(meta)
-    if run_id and _attached_elsewhere(run_id):
-        return []
+def _end_service_pieces(run_dir: Path, row: dict | None = None) -> list[str]:
+    """End every `kind: service` piece of the run in `run_dir` (`ssh <host> tmux kill-session
+    -t <session>`, local with no `ssh` when the host normalises to `login_host`, errata wave-4
+    precheck), read from its `meta.json` pieces, or from its start row's list (`row`) when the
+    directory has no `meta.json`. Returns the sessions actually ended."""
+    meta = _read_json(Path(run_dir) / "meta.json") or {}
     ended = []
-    for piece in meta.get("pieces") or []:
+    for piece in meta.get("pieces") or (row or {}).get("pieces") or []:
         if piece.get("kind") != "service":
             continue
         host, session = piece.get("host"), piece.get("session")
@@ -713,6 +772,37 @@ def teardown_services(run_dir) -> list[str]:
         if _kill_tmux(host, session):
             ended.append(session)
     return ended
+
+
+def teardown_services(run_dir) -> list[str]:
+    """End the service pieces this run no longer needs (2.3). Every caller calls this when the
+    run stops using its services: its requested records are finished, or its launch failed.
+
+    First the servers this run attached to: a server's lifetime is tied to its last user. For
+    each run `X` this run's endpoint documents name in `attached_to`, when `X` has no open
+    registry row (its own teardown was skipped because this run was attached, and its finish
+    row has closed it since) and no other open run's document names `X`, this run is the last
+    user of `X`'s server, and every service piece of `X` ends here, read from `X`'s `meta.json`
+    the way `X`'s own teardown reads it. While `X` is open, `X`'s own teardown ends it later.
+
+    Then this run's own service pieces, skipped whole while this run's own `run_id` appears in
+    another live run's `attached_to`: that run is still using this run's server, and the last
+    of those users ends it by the rule above. Returns the sessions actually ended."""
+    run_dir = Path(run_dir)
+    meta = _read_json(run_dir / "meta.json") or {}
+    run_id = _run_id_of_meta(meta)
+    ended = []
+    owners = _attached_to_of(run_dir)
+    if owners:
+        open_ids = {row.get("run_id") for row in registry.open_runs()}
+        still_used = _servers_in_use(except_run_id=run_id)
+        for owner in sorted(owners - open_ids - still_used):
+            owner_row = _folded_row_of(owner)
+            if owner_row is not None:
+                ended += _end_service_pieces(Path(owner_row.get("dir", "")), owner_row)
+    if run_id and _attached_elsewhere(run_id):
+        return ended
+    return ended + _end_service_pieces(run_dir)
 
 
 def teardown_launch(run_dir, pieces) -> list[str]:
@@ -784,29 +874,37 @@ def _resolve_split_files(stage: str, setting) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _claim_cards(free_by_host: dict, host: str, n: int, min_card_gib: int) -> list[int]:
-    """Claim the first `n` free cards of `host` that are at least `min_card_gib` GiB, taking them
-    out of `free_by_host` in place."""
-    ids = fitting_cards(free_by_host, host, min_card_gib)
-    if len(ids) < n:
-        sys.exit(f"jobs/launch.py: host {host!r} has only {len(ids)} free card(s) of at least "
-                 f"{min_card_gib} GiB, need {n}")
-    claimed = ids[:n]
+def _claim_cards(free_by_host: dict, host: str, n: int, min_card_gib: int,
+                 combine: bool) -> list[int]:
+    """Claim the cards of `host` that `cards_for` gives a piece declared for `n` cards of at
+    least `min_card_gib` GiB, taking them out of `free_by_host` in place."""
+    claimed = cards_for(free_by_host, host, n, min_card_gib, combine)
+    if claimed is None:
+        sys.exit(f"jobs/launch.py: host {host!r} cannot hold a piece declared for {n} card(s) of "
+                 f"at least {min_card_gib} GiB; free there: {free_by_host.get(host) or []}")
     free_by_host[host] = [i for i in free_by_host[host] if i not in claimed]
     return claimed
 
 
-def _no_cards_message(free_by_host: dict, needed: int, min_card_gib: int, pool) -> str:
+def _no_cards_message(free_by_host: dict, needed: int, min_card_gib: int, pool,
+                      combine: bool) -> str:
     """The refusal when `place` finds no host for a piece. With a named pool, each pool card
     smaller than the piece's `min_card_gib` is named with its size, as `restrict_to_pool` names
-    a pool card that is not free."""
+    a pool card that is not free; with `combine`, the message also names each pool host's
+    combined free memory, which is short of the `needed * min_card_gib` GiB as well."""
     memory = registry.card_memory_gib()
     if pool is not None:
         small = [f"{h}:{i} ({memory[h][i]} GiB)" for h, ids in free_by_host.items()
                  for i in ids if memory[h][i] < min_card_gib]
         if small:
-            return (f"jobs/launch.py: --cards names card(s) smaller than the {min_card_gib} GiB "
+            text = (f"jobs/launch.py: --cards names card(s) smaller than the {min_card_gib} GiB "
                     f"this piece needs: {', '.join(small)}")
+            if combine:
+                together = ", ".join(f"{h} {sum(memory[h][i] for i in ids)} GiB"
+                                     for h, ids in free_by_host.items() if ids)
+                text += (f"; combined on one host they hold {together}, short of the "
+                         f"{needed * min_card_gib} GiB")
+            return text
     probed = ", ".join(f"{h}:{len(fitting_cards(free_by_host, h, min_card_gib))} free"
                        for h in free_by_host)
     return (f"jobs/launch.py: no host has {needed} free card(s) of at least {min_card_gib} GiB; "
@@ -832,16 +930,34 @@ def _next_free_port(kind: str, replica: int, serving_port, host: str) -> int:
     return port
 
 
-def _find_attach_target(agent_row: dict, hosts=None):
-    """7.4's attach search: a live registry row with a `service_agent_*.json`
-    whose `claims` match this run's frozen `result:` block (plus `role`/`family`)
-    value for value, and whose server is answering now. `hosts` is the set of hosts
-    the server may be on: `None` for every host, and the pool's hosts when the launch
-    names a pool, because a named pool is where that launch runs, its agent service
-    included. Within that, the search reaches every host: the endpoint document carries the host its server was placed on (7.1
-    writes the `--host` the launcher handed it), so the match itself names the
-    host this run's attached piece goes to, and a server that `place` moved off
-    its table row's serving host is found where it actually runs.
+def _find_attach_target(agent_row: dict, pool: dict[str, list[int]] | None):
+    """7.4's attach search: a registry row that owns an agent server --
+    a `service_agent_*.json` with no `attached_to`, written by a piece that
+    started the server (7.1) -- whose `claims` match this run's frozen
+    `result:` block (plus `role`/`family`) value for value, and whose server
+    is answering now. A document that names `attached_to` belongs to a run
+    that attached to somebody else's server, so the run that owns the server
+    is the one an attach names, and the one whose teardown the `attached_to`
+    skip rule of 2.3 has to hold back.
+
+    The owner rows searched are the open rows and the closed rows of runs whose
+    server an open run still uses (an open run's document names them in
+    `attached_to`): a server lives while any open run uses it, because the owner's
+    teardown was skipped for that user and the last user's teardown ends it
+    (`teardown_services`), so its owner's finish row does not end it. A closed
+    owner that no open run names has had its server ended by its own teardown or
+    by its last user's, and is not searched.
+
+    `pool` is where the server may be: `None` for any host, and with a named
+    pool only a server whose every card is in the pool, host and card index
+    both, because a named pool is where that launch runs, its agent service
+    included, and one host may run several servers of the same model on
+    different cards. The endpoint document carries the host its server was
+    placed on (7.1 writes the `--host` the launcher handed it) and the cards
+    it holds (`gpus`, the ids the launcher handed it), so the match itself
+    names the host this run's attached piece goes to, and a server that
+    `place` moved off its table row's serving host is found where it
+    actually runs.
 
     Answering now is part of the test because an endpoint file outlives its
     server: nothing deletes it, and a run is open from its start row on (8.2)
@@ -853,7 +969,12 @@ def _find_attach_target(agent_row: dict, hosts=None):
     when the directory has no `meta.json` -- and the port answers."""
     if not agent_row:
         return None
-    for row in registry.open_runs():
+    open_rows = registry.open_runs()
+    open_ids = {row.get("run_id") for row in open_rows}
+    closed_in_use = sorted(_servers_in_use() - open_ids)
+    closed_rows = [row for row in (_folded_row_of(run_id) for run_id in closed_in_use)
+                   if row is not None]
+    for row in open_rows + closed_rows:
         run_dir = Path(row.get("dir", ""))
         if not run_dir.is_dir():
             continue
@@ -863,21 +984,20 @@ def _find_attach_target(agent_row: dict, hosts=None):
             doc = _read_json(path)
             if not doc:
                 continue
+            if doc.get("attached_to") is not None:
+                continue
             claims = doc.get("claims") or {}
             if not all(claims.get(k) == v for k, v in agent_row.items()):
                 continue
-            if hosts is not None and doc.get("host") not in hosts:
+            host = registry.canonical_host(str(doc.get("host")))
+            gpus = doc.get("gpus") or []
+            if pool is not None and not (gpus and all(i in (pool.get(host) or []) for i in gpus)):
                 continue
             served = any(p.get("kind") == "service" and p.get("endpoint_file") == path.name
                          and p.get("port") == doc.get("port") for p in row_pieces)
             if served and _port_answers(doc.get("host"), doc.get("port")):
-                # An attached run's endpoint file carries the same claims, host and port as
-                # the server it attached to, and names that server's run in `attached_to`.
-                # The new run attaches to that owner, never to the attacher: teardown asks
-                # `_attached_elsewhere` about the owner's run_id, so naming the attacher would
-                # let the owner's server be ended while this run still uses it.
-                owner = doc.get("attached_to") or row.get("run_id")
-                return {"run_id": owner, "host": doc.get("host"), "port": doc.get("port")}
+                return {"run_id": row.get("run_id"), "host": host, "port": doc.get("port"),
+                        "gpus": list(gpus)}
     return None
 
 
@@ -1021,18 +1141,25 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
         if refusal is not None:
             sys.exit(f"jobs/launch.py: {refusal}")
 
-        free_by_host = restrict_to_pool(registry.free(), cards)
-
         # The agent service's host. A live server for this model takes it, on whatever host
         # that server's endpoint file names (the attach of 7.4); a named pool is where this
-        # launch runs, so with a pool the server must be on one of the pool's hosts. Otherwise the table row's
-        # serving host is the preference `place` searches from, and the cards this launch may
-        # claim -- every free card, or the named pool -- decide where the server really lands.
+        # launch runs, so with a pool the server's cards must be pool cards, and those cards,
+        # held by the server, leave the pool before the rest of it is held to being free.
+        # Otherwise the table row's serving host is the preference `place` searches from, and the
+        # cards this launch may claim -- every free card, or the named pool -- decide where the
+        # server really lands.
         attach = None
         if stage in ("sample", "inject"):
-            attach = _find_attach_target(agent_row, None if cards is None else set(free_by_host))
+            attach = _find_attach_target(agent_row, cards)
             if attach is not None:
                 serving_host = attach["host"]
+        pool = cards
+        if cards is not None and attach is not None:
+            pool = _pool_without(cards, attach["host"], attach["gpus"])
+        free_by_host = restrict_to_pool(registry.free(), pool)
+        # On a named pool, an agent server whose pool cards are all smaller than the size it was
+        # declared for runs tensor-parallel over the fewest of them that together reach it.
+        combine = cards is not None
 
         piece_plan = _build_piece_plan(stage, setting)
         n_loop = sum(1 for p in piece_plan if p["kind"] == "loop")
@@ -1072,10 +1199,10 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
                 venv = _resolve_venv(entry["venv"], None)
                 python = _interpreter_for(venv)
                 host = place("train", 1, free_by_host, min_card_gib=0, serving_host=None,
-                             prefer_host=serving_host, attached=False)
+                             prefer_host=serving_host, attached=False, combine=False)
                 if host is None:
-                    sys.exit(_no_cards_message(free_by_host, 1, 0, cards))
-                gpu_id = _claim_cards(free_by_host, host, 1, 0)[0]
+                    sys.exit(_no_cards_message(free_by_host, 1, 0, cards, False))
+                gpu_id = _claim_cards(free_by_host, host, 1, 0, False)[0]
                 module = entry["program"].format(method=setting.probe.method)
                 cmd = piece_command(python, module, run_dir_str, None, None, str(gpu_id), log)
                 placed.append({"index": idx, "kind": "train", "host": host, "gpus": str(gpu_id),
@@ -1091,19 +1218,22 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
                 agent_card_gib = _declared_card_gib(agent_alias)
                 host = place("service_agent", tp_size, free_by_host, min_card_gib=agent_card_gib,
                              serving_host=serving_host, prefer_host=serving_host,
-                             attached=attached)
+                             attached=attached, combine=combine)
                 if host is None:
-                    sys.exit(_no_cards_message(free_by_host, tp_size, agent_card_gib, cards))
+                    sys.exit(_no_cards_message(free_by_host, tp_size, agent_card_gib, cards,
+                                               combine))
                 if local_i == 0:
                     agent_host = host
                 if attached:
-                    gpus, port = "", attach["port"]
+                    gpus, port, served_tp = "", attach["port"], None
                 else:
-                    gpu_ids = _claim_cards(free_by_host, host, tp_size, agent_card_gib)
+                    gpu_ids = _claim_cards(free_by_host, host, tp_size, agent_card_gib, combine)
                     gpus = ",".join(str(g) for g in gpu_ids)
+                    served_tp = len(gpu_ids)
                     port = _next_free_port("service_agent", local_i, serving_port, host)
                 endpoint_file = f"service_agent_{local_i}.json"
                 cmd = _agent_service_cmd(python, run_dir_str, agent_alias, host, port, gpus, local_i,
+                                          tensor_parallel_size=served_tp,
                                           attach_only=attached,
                                           attached_to=(attach["run_id"] if attached else None),
                                           log=log)
@@ -1118,13 +1248,14 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
                 render_only = (p["mode"] == "render_only")
                 cards_needed = 0 if render_only else 1
                 host = place("service_probe", cards_needed, free_by_host, min_card_gib=0,
-                             serving_host=None, prefer_host=agent_host, attached=False)
+                             serving_host=None, prefer_host=agent_host, attached=False,
+                             combine=False)
                 if host is None:
-                    sys.exit(_no_cards_message(free_by_host, cards_needed, 0, cards))
+                    sys.exit(_no_cards_message(free_by_host, cards_needed, 0, cards, False))
                 if render_only:
                     gpus, device, score_ckpt, gen_ckpt, temperature = "", None, None, None, None
                 else:
-                    gpu_id = _claim_cards(free_by_host, host, 1, 0)[0]
+                    gpu_id = _claim_cards(free_by_host, host, 1, 0, False)[0]
                     gpus, device = str(gpu_id), f"cuda:{gpu_id}"
                     upstream_map = schema.upstream(stage, setting)
                     score_ckpt = schema.referenced_run_dir("train", upstream_map["probe_score.train"])
@@ -1251,8 +1382,16 @@ def _train_can_continue(run_dir: Path) -> bool:
     would mix two runs in one log. Refire used to
     start that refused incarnation, which died at once and left a `launching` row that
     blocked `run.py retry` for `launch_timeout_s` (repo test 2026-09-25, O10). This module
-    imports no torch, so the rule is restated here and both places name each other."""
+    imports no torch, so the rule is restated here and both places name each other.
+
+    A setting with `train.import_from` bypasses that rule in the trainer: the import rebuilds
+    `best/` from the source whole on every incarnation and rewrites `train_log.jsonl` with its
+    one `import` line, so an import killed after that line and before `done.json` continues,
+    and so does any other import directory. The frozen `settings.yaml` says which setting the
+    directory runs."""
     run_dir = Path(run_dir)
+    if schema.load_frozen(run_dir).train.import_from is not None:
+        return True
     if (run_dir / "train_done.json").exists():
         return True
     if (run_dir / "last").exists() or (run_dir / "last.prev").exists():
@@ -1430,12 +1569,13 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
         new_host, new_gpus = host, old_gpus
         if kind == "train" and cards_needed > 0:
             placed_host = place("train", cards_needed, free_by_host, min_card_gib=0,
-                                 serving_host=host, prefer_host=host, attached=False)
+                                 serving_host=host, prefer_host=host, attached=False,
+                                 combine=False)
             if placed_host is None:
-                sys.exit(_no_cards_message(free_by_host, cards_needed, 0, cards))
+                sys.exit(_no_cards_message(free_by_host, cards_needed, 0, cards, False))
             new_host = placed_host
             new_gpus = ",".join(
-                str(g) for g in _claim_cards(free_by_host, new_host, cards_needed, 0))
+                str(g) for g in _claim_cards(free_by_host, new_host, cards_needed, 0, False))
 
         module, old_run_dir, piece_i, piece_n, log = _parse_piece_cmd(target.get("cmd") or "")
         python = _interpreter_for(target.get("venv"))

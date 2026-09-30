@@ -1,4 +1,4 @@
-"""The eval program of every probe method: the PROBE_KIND table, the three match functions, the classifier and the generator report, and the driver that reads a train run's prediction rows and writes the probe report."""
+"""The eval program of every probe method: the PROBE_KIND table, the three match functions, the classifier and the generator report, the report of an imported train run, and the driver that reads a train run's prediction rows (or an imported run's calibration) and writes the probe report."""
 from __future__ import annotations
 
 import hashlib
@@ -515,6 +515,67 @@ def report_generator(method: str, pred_df: pl.DataFrame, cfg, ref,
     return fields, None
 
 
+_IMPORTED_ABSENT = {
+    "classifier": (
+        "frozen (the test-split coverage, trig_acc, earliness and wrong_spec at each chosen "
+        "theta), n_events and the rows of fires.parquet are computed from the train run's "
+        "predictions.parquet, and an imported train run has none: the previous pipeline trained "
+        "this probe and the train stage took its checkpoint over without a prediction pass. "
+        "temperature, grid and chosen are that pipeline's own fit, copied from its "
+        "REPLAY_REPORT.json (temperature, theta_sweep_calB, chosen_theta)."),
+    "generator": (
+        "exact (tool_ok, params_all_ok and full_call_ok at each theta) and n_events are "
+        "computed from the train run's predictions.parquet, and an imported train run has none: "
+        "the previous pipeline trained this probe and the train stage took its checkpoint over "
+        "without a prediction pass. theta_used and ref_temperature are read from the referenced "
+        "classifier eval (theta_from)."),
+}
+
+
+def report_imported(method: str, cfg, ref, checkpoint_meta: dict) -> tuple[dict, pl.DataFrame | None]:
+    """The report of an imported train run, which has no prediction rows: the calibration the
+    previous pipeline fitted, carried into the fields the classifier report fits (`temperature`,
+    `grid`, `chosen`), or, for a generator, the referenced classifier report's thetas and
+    temperature; every number computed from prediction rows is absent, and `absent` says why.
+    A classifier's fires are the empty frame, so a generator eval that names it reads a
+    fires.parquet as it does for a fitted one."""
+    kind = PROBE_KIND[method]
+    common = {"imported": True, "imported_from": checkpoint_meta["imported_from"],
+              "risk_targets": cfg.eval.risk, "n_events": {}, "absent": _IMPORTED_ABSENT[kind]}
+    if kind == "classifier":
+        if ref is not None:
+            raise ValueError(f"{method}: ref must be None for a classifier method")
+        calibration = checkpoint_meta["imported_calibration"]
+        source_chosen = calibration["chosen_theta"]
+        uncovered = [str(risk) for risk in cfg.eval.risk if str(risk) not in source_chosen]
+        if uncovered:
+            raise ValueError(
+                f"{method}: eval.risk {cfg.eval.risk} names risk target(s) {uncovered}; the "
+                f"imported calibration of {checkpoint_meta['imported_from']} chose thetas for "
+                f"{sorted(source_chosen)} only")
+        fields = {
+            **common,
+            "temperature": calibration["temperature"],
+            "grid": [{"theta": theta, **stats} for theta, stats in calibration["theta_sweep"]],
+            "chosen": {str(risk): source_chosen[str(risk)] for risk in cfg.eval.risk},
+            "frozen": {},
+        }
+        return fields, pl.DataFrame(schema=FIRES_SCHEMA)
+    if kind == "generator":
+        ref_fields, _ref_fires = ref
+        fields = {
+            **common,
+            "theta_used": {str(risk): ref_fields["chosen"][str(risk)] for risk in cfg.eval.risk},
+            "ref_temperature": ref_fields["temperature"],
+            "ref_imported": bool(ref_fields.get("imported")),
+            "exact": {},
+        }
+        return fields, None
+    raise ValueError(
+        f"{method}: PROBE_KIND {kind!r} has no report shape; the shapes are "
+        f"'classifier' and 'generator'")
+
+
 def report(method: str, pred_df: pl.DataFrame, cfg, ref,
            labels: list[str] | None, hb) -> tuple[dict, pl.DataFrame | None]:
     """The report of the method's PROBE_KIND: the classifier shape for a classifier, the generator shape for a generator."""
@@ -579,6 +640,34 @@ def _render_report_md(fields: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _render_imported_report_md(fields: dict) -> str:
+    """Render an imported train run's probe_report.json as report.md; computes nothing itself."""
+    lines = [
+        f"# eval {fields['stage_key']} — {fields['method']} ({fields['probe_kind']}) at "
+        f"{fields['commit']}, imported",
+        "",
+        f"imported from: {fields['imported_from']}",
+        "",
+    ]
+    if fields["probe_kind"] == "classifier":
+        lines.append(f"temperature: {fields['temperature']} (imported)")
+        lines.append("")
+        for risk in fields["risk_targets"]:
+            risk_str = str(risk)
+            lines.append(f"- risk {risk_str}: theta={fields['chosen'][risk_str]} (imported)")
+    else:
+        lines.append(f"temperature of the referenced classifier eval: {fields['ref_temperature']}"
+                     f" ({'imported' if fields['ref_imported'] else 'fitted'})")
+        lines.append("")
+        for risk in fields["risk_targets"]:
+            risk_str = str(risk)
+            lines.append(f"- risk {risk_str}: theta_used={fields['theta_used'][risk_str]}")
+    lines.append("")
+    lines.append("## absent numbers")
+    lines.append(fields["absent"])
+    return "\n".join(lines) + "\n"
+
+
 def _classifier_metrics(fields: dict) -> dict[str, float]:
     metrics: dict[str, float] = {}
     for risk_str, block in fields.get("frozen", {}).items():
@@ -600,7 +689,7 @@ def _generator_metrics(fields: dict) -> dict[str, float]:
 
 
 def run(run_dir: Path) -> None:
-    """Drive one eval run: load the frozen setting, read the predictions, call the report of the setting's probe method, write the report, and mark done."""
+    """Drive one eval run: load the frozen setting, read the predictions, call the report of the setting's probe method, write the report, and mark done. A train run under train.import_from has no predictions; its report carries the imported calibration instead (report_imported)."""
     run_dir = Path(run_dir)
     cfg = schema.load_frozen(run_dir)
     method = cfg.probe.method
@@ -610,26 +699,35 @@ def run(run_dir: Path) -> None:
     hb = registry.beat(run_dir, 0)
 
     train_dir = schema.run_dir_of("train", cfg._upstream["train"], debug=cfg._debug)
-    pred_df = probe_output.read(train_dir / "predictions.parquet")
-    methods_found = sorted(pred_df["method"].unique().to_list())
-    if methods_found != [method]:
-        raise ValueError(
-            f"{train_dir / 'predictions.parquet'}: method column holds {methods_found}, "
-            f"expected only [{method!r}]")
-
-    total_events = pred_df["event_id"].n_unique()
-    # The beat's total is the report's pass count, the only unit the report advances by: it
-    # walks the whole frame once per theta and once or more per risk target, so there is no
-    # point at which a count of events is partly finished (8.4, report_passes).
-    hb.emit(0, report_passes(method, cfg), "item")
-
     train_meta = json.loads((train_dir / "meta.json").read_text())
     labels = train_meta["stage_extra"]["labels"]
-    # The events the train run dropped whole at train.max_len, per split, out of that run's
-    # done.json counts. They have no prediction row, so they enter no number of this report;
-    # report.md states how many there were in val and in test and that is all.
-    train_done = json.loads((train_dir / "done.json").read_text())
-    dropped_overlong = train_done["counts"]["dropped_overlong"]
+    # A train run under train.import_from took a previous-pipeline checkpoint over and has no
+    # prediction rows; its best/meta.json carries the calibration that pipeline fitted, and
+    # this eval writes that instead of fitting (report_imported).
+    imported_from = train_meta["stage_extra"].get("imported_from")
+
+    if imported_from is None:
+        pred_df = probe_output.read(train_dir / "predictions.parquet")
+        methods_found = sorted(pred_df["method"].unique().to_list())
+        if methods_found != [method]:
+            raise ValueError(
+                f"{train_dir / 'predictions.parquet'}: method column holds {methods_found}, "
+                f"expected only [{method!r}]")
+        total_events = pred_df["event_id"].n_unique()
+        # The beat's total is the report's pass count, the only unit the report advances by: it
+        # walks the whole frame once per theta and once or more per risk target, so there is no
+        # point at which a count of events is partly finished (8.4, report_passes).
+        hb.emit(0, report_passes(method, cfg), "item")
+        # The events the train run dropped whole at train.max_len, per split, out of that run's
+        # done.json counts. They have no prediction row, so they enter no number of this report;
+        # report.md states how many there were in val and in test and that is all.
+        train_done = json.loads((train_dir / "done.json").read_text())
+        dropped_overlong = train_done["counts"]["dropped_overlong"]
+    else:
+        pred_df = None
+        total_events = 0
+        hb.emit(0, 1, "item")
+        dropped_overlong = None
 
     kind = PROBE_KIND[method]
     ref = None
@@ -655,6 +753,14 @@ def run(run_dir: Path) -> None:
             raise ValueError(
                 f"eval.risk {cfg.eval.risk} differs from the referenced report's "
                 f"risk_targets {ref[0]['risk_targets']}")
+        # An imported classifier eval has no fired rows on this build's test split, and the
+        # generator report of a trained run scores exactly those rows.
+        if ref[0].get("imported") and imported_from is None:
+            raise ValueError(
+                f"eval key {ref_key} at {ref_eval_dir}: the referenced classifier eval "
+                f"(theta_from) is an import of {ref[0]['imported_from']} and holds no fired rows, "
+                f"which the generator report of this trained run scores; name a fitted "
+                f"classifier eval in eval.theta_from")
 
         ref_meta = json.loads((ref_eval_dir / "meta.json").read_text())
         ref_train_key = ref_meta["upstream"]["train"]
@@ -675,7 +781,12 @@ def run(run_dir: Path) -> None:
                 f"the referenced classifier eval's train run has build key {ref_build_key!r}, "
                 f"this eval's own train run has build key {own_build_key!r}")
 
-    fields, fires = report(method, pred_df, cfg, ref, labels, hb)
+    if imported_from is None:
+        fields, fires = report(method, pred_df, cfg, ref, labels, hb)
+    else:
+        checkpoint_meta = json.loads((train_dir / "best" / "meta.json").read_text())
+        fields, fires = report_imported(method, cfg, ref, checkpoint_meta)
+        hb.emit(1, 1, "item")
 
     clash = sorted(set(fields) & IDENTITY_FIELDS)
     if clash:
@@ -691,18 +802,22 @@ def run(run_dir: Path) -> None:
         "theta_from": cfg._upstream.get("theta_from.eval"),
         "commit": cfg._commit,
         "labels": labels,
-        "dropped_overlong": {"val": dropped_overlong["val"], "test": dropped_overlong["test"]},
+        "dropped_overlong": (None if dropped_overlong is None else
+                             {"val": dropped_overlong["val"], "test": dropped_overlong["test"]}),
     }
     full_fields = {**identity, **fields}
 
     write_report(run_dir, full_fields, fires)
-    (run_dir / "report.md").write_text(_render_report_md(full_fields))
-
-    consumed = [{
-        "path": str(train_dir / "predictions.parquet"),
-        "sha1": _sha1(train_dir / "predictions.parquet"),
-        "n_rows": pred_df.height,
-    }]
+    if imported_from is None:
+        (run_dir / "report.md").write_text(_render_report_md(full_fields))
+        n_rows = pred_df.height
+        consumed_input, consumed_rows = train_dir / "predictions.parquet", n_rows
+    else:
+        (run_dir / "report.md").write_text(_render_imported_report_md(full_fields))
+        n_rows = 0
+        consumed_input, consumed_rows = train_dir / "best" / "meta.json", None
+    consumed = [{"path": str(consumed_input), "sha1": _sha1(consumed_input),
+                 "n_rows": consumed_rows}]
     if kind == "generator":
         consumed.append({
             "path": str(ref_eval_dir / "probe_report.json"),
@@ -717,15 +832,17 @@ def run(run_dir: Path) -> None:
         })
     _atomic_write_json(run_dir / "consumed.json", consumed)
 
-    metrics = _classifier_metrics(full_fields) if kind == "classifier" else _generator_metrics(full_fields)
+    counts = {"rows": n_rows, "events": total_events,
+              "fires": fires.height if fires is not None else 0}
+    if imported_from is None:
+        metrics = (_classifier_metrics(full_fields) if kind == "classifier"
+                   else _generator_metrics(full_fields))
+    else:
+        counts["imported"] = 1
+        metrics = {"imported": 1}
     registry.write_done(
         run_dir, stage="eval", key=cfg._key, commit=cfg._commit,
-        counts={
-            "rows": pred_df.height,
-            "events": total_events,
-            "fires": fires.height if fires is not None else 0,
-        },
-        era=cfg._era, metrics=metrics, report="report.md",
+        counts=counts, era=cfg._era, metrics=metrics, report="report.md",
     )
     hb.finish()
 

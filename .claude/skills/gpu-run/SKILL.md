@@ -67,8 +67,8 @@ host). Count the cards the stage's pieces need:
 
 | stage | pieces that hold a card | cards |
 |---|---|---|
-| `sample` | agent service x `sample.replicas` | `tensor_parallel_size` each |
-| `inject` | agent service x `inject.replicas`, plus one probe service | `tensor_parallel_size` each, plus 1 |
+| `sample` | agent service x `sample.replicas` | `tensor_parallel_size` each (on cards below the floor: the fewest that together reach it) |
+| `inject` | agent service x `inject.replicas`, plus one probe service | `tensor_parallel_size` each (on cards below the floor: the fewest that together reach it), plus 1 |
 | `train` | one train piece | 1 |
 
 Then pick each piece's card type from `references/card_performance.md`: the smallest card
@@ -98,10 +98,35 @@ named card that is not free refuses the launch (`--cards names card(s) that are 
 smaller than the requirement with its size (`--cards names card(s) smaller than the <n> GiB
 this piece needs: <host>:<id> (<m> GiB)`).
 
-An agent service that an open run already serves on a pool host is attached to rather than
-started again (contracts 7.4), and then takes no card from the pool. When the free list
-holds no card of the size a piece needs, report the free list and stop; never launch on a
-smaller card and never launch without `--cards` to get past it.
+On a pool, an agent service that starts its own server has one more way to meet its floor:
+on a host whose pool cards are all smaller than the floor, it takes the fewest of those cards
+whose memory together reaches the floor (times the table row's `tensor_parallel_size`),
+claims all of them, and the server runs with `tensor_parallel_size` equal to that count and
+`CUDA_VISIBLE_DEVICES` listing those cards. For `gpt_oss_120b` (floor 93 GiB, the smallest
+tokyo108 card) that is two 47 GiB cards, so `--cards tokyo106:<a>,<b>` puts its server on
+tokyo106 across two A6000. The endpoint file `service_agent_<replica>.json` records the cards
+(`gpus`) and `tensor_parallel_size`; `run.py ls` shows every claimed card on the piece, and
+`kill` and teardown release them all. A pool that cannot reach the floor even combined is
+refused with the message above plus the combined size per host (`...; combined on one host
+they hold <host> <m> GiB, short of the <n> GiB`). The table row's serving host stays the
+first host tried; a pool that does not name it puts the server on a pool host. Without
+`--cards` there is no combining: the agent service needs cards of its floor.
+
+An agent service that an open run already serves is attached to rather than started again
+(contracts 7.4), and then takes no card. Without `--cards` the attach reaches a matching live
+server on any host. With `--cards`, a run attaches only to a matching live server whose every
+card is in the pool, host and card index both, so one host can carry several servers of the
+same model: `--cards tokyo108:4 tokyo105:0` attaches to the server on tokyo108 card 4 and to
+no other, or starts one there when none serves. Those server cards are held by the server,
+not claimed and not required to be free; every other pool card still has to be free. The
+server a run attaches to is the one whose run started it (its endpoint file has no
+`attached_to`), never another attached run. That owner run may already be finished: a server
+stays up and attachable while any open run is attached to it, and the teardown of its last
+user ends it. A call that walks several settings on one pool
+keeps each started agent server's cards in the pool, so the next setting attaches to that
+server. When the free list holds no card of the size a piece needs and no pool of smaller
+cards reaches it together, report the free list and stop; never launch without `--cards` to
+get past it.
 
 ## Phase 2 — Commit before launching
 
@@ -287,7 +312,9 @@ finish row. While another live run is attached to this run's server (a
 `service_<kind>_<replica>.json` of that run names this run in `attached_to`), that
 teardown and the wrap-up walk's own teardown end none of this run's service pieces, the
 probe service included: they keep reading `healthy`, and once the finish row is written
-the run's line carries `orphan`. The `orphan` flag on a run with a finish row means one
+the run's line carries `orphan`. The teardown of the last attached run to finish ends them:
+when the owner run is closed and no other open run is attached to it, that teardown ends
+every service piece of the owner run. The `orphan` flag on a run with a finish row means one
 of its service sessions counts as alive: it is still running, either for that reason or
 because a teardown failed, or the `tmux ls` probe of its host did not answer, which counts
 every session on that host as alive (fail-closed, contracts 3.4 and 8.6). A live tmux session
