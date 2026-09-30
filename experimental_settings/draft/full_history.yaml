@@ -1,0 +1,29 @@
+# Draft workflow (gyb's draft directory, 2026-10-01): the full-history probes of
+# .scratch/full-history-probe/spec.md. Collect trajectories under the settings gyb
+# decided on 2026-09-30, build the dataset with every earlier round in the probe's
+# text, train a probe, evaluate it.
+workflow: [sample, build, train, eval]
+
+common:
+  data:       {env: appworld, instructions: v2}
+  models:     {agent: gpt_oss_120b}
+  # 50 steps, 30,000 generated tokens per step, each tool reply cut at 20,000
+  # characters, five runs per task (the four August seeds plus 2026).
+  generation: {max_step_tokens: 30000, result_cap: 20000}
+  sample:     {split: [train, dev, test], seeds: [42, 67, 4267, 6742, 2026], max_steps: 50, pieces: 18, replicas: 3}
+
+collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "classification probe, Qwen3-0.6B-Base, full tuning, the probe's text holds the task, every earlier round and the thinking so far; the result clip and the text budget are the first candidates before measurement 1 (spec section 5); three passes with a weight copy per pass; gradient checkpointing on for a 47 GiB card"}
+  models: {probe: qwen3_0pt6b}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
+
+collection_2026_10_01_three_rounds_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the control on the same collection: today's probe text (the last three rounds, results clipped to 400 characters) and today's token limit; same backbone, tuning and passes as the full-history probe"}
+  models: {probe: qwen3_0pt6b}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 3, probe_result_cap: 400}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 8192, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
