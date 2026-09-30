@@ -127,6 +127,7 @@ elapsed_s 4.2 s to 60.3 s (`jobs/runs.jsonl`).
 | `train-c01a3052dca5`: cgen import, 0.6B full | NVIDIA RTX A6000, 47 GiB, tokyo105 c1 | not printed | heartbeat span 31.5 s; registry elapsed_s 696.5 | - | ok | 2026-09-30 | `<O>/train/c01a3052dca5/heartbeat/`, `jobs/runs.jsonl` |
 | `train-4bd4a2483c43`: ctool import, 4B LoRA (merged) | NVIDIA RTX A6000, 47 GiB, tokyo105 c2 | not printed | heartbeat span 401.2 s; registry elapsed_s 577.6 | - | ok | 2026-09-30 | `<O>/train/4bd4a2483c43/heartbeat/`, `jobs/runs.jsonl` |
 | `train-9fc3053bacbb`: cgen import, 4B LoRA (merged) | NVIDIA RTX A6000, 47 GiB, tokyo105 c3 | not printed | heartbeat span 414.3 s; registry elapsed_s 518.7 | - | ok | 2026-09-30 | `<O>/train/9fc3053bacbb/heartbeat/`, `jobs/runs.jsonl` |
+| `train-ec299a4fbeb7` (chain of the full-history probe code, commit ac88d7e, `train.save_passes=true build.probe_text_max_chars=3000 eval.checkpoint=pass_1`): ctool, full, 0.6B, debug (8 train events, 1 step, 1 pass), with the pass_1/ copy and prediction rows from best/ and pass_1/ | NVIDIA RTX A6000, 47 GiB, tokyo105 c7 | not printed | train_log start to save_pass 69 s; heartbeat span 89.9 s; registry elapsed_s 173.3 | - | ok; its eval b7bace690b2b read predictions_pass_1.parquet | 2026-10-01 | `<O>/debug/train/ec299a4fbeb7/{train_log.jsonl,heartbeat/,pass_1/}`, `<O>/debug/eval/b7bace690b2b/`, `jobs/runs.jsonl` |
 
 ## Previous pipeline, previous trainer at 4096 tokens per event
 
