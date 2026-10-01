@@ -182,7 +182,7 @@ class Setting:
     _workflow: list[str] = field(default_factory=list)  # the file's workflow: line; never written to settings.yaml
     _debug: bool = False
     _name: str = ""                              # the named setting, or "<name>/<field>=<v>,..." for a sweep child
-    _file: str = ""                               # the workflow file's stem, the first half of a reference
+    _file: str = ""                               # the workflow file's name under experimental_settings/ without .yaml ("train_probe", "draft/full_history"), the first half of a reference
     _stage: str | None = None                     # filled by load_frozen / freeze
     _key: str | None = None
     _upstream: dict = field(default_factory=dict)
@@ -957,9 +957,29 @@ def _ref_requirements(field_dotted: str) -> tuple[str, ...]:
     return tuple(u["stage"] for u in _ref_entries(field_dotted))
 
 
-# The (workflow file stem, setting name) pairs whose name-form references are being resolved
+# The (workflow file name, setting name) pairs whose name-form references are being resolved
 # right now, outermost first; a pair met again while it is on this chain is a reference cycle.
 _RESOLVING: list[tuple[str, str]] = []
+
+
+def workflow_name_of(ref_file: Path) -> str:
+    """The name a workflow file is known by: its path under experimental_settings/ without the .yaml suffix ("train_probe", "draft/full_history"), which is what run.py takes as <workflow> and what a reference's first half spells; a file elsewhere (a test's temporary file) is known by its stem."""
+    settings_dir = (ROOT / "experimental_settings").resolve()
+    path = Path(ref_file).resolve()
+    if path.is_relative_to(settings_dir):
+        return str(path.relative_to(settings_dir).with_suffix(""))
+    return path.stem
+
+
+def _split_reference(value: str) -> tuple[str, str, Path | None]:
+    """Split a name-form reference into (workflow name, setting name, workflow file): the workflow name is the shortest slash-separated prefix of the value that names a file under experimental_settings/, so "train_probe/ctool_x" reads the top-level file and "draft/full_history/x" the file in the draft directory; a setting name keeps its own slashes (a sweep child's). The file is None when no prefix names one."""
+    parts = value.split("/")
+    for n in range(1, len(parts)):
+        stem = "/".join(parts[:n])
+        ref_file = ROOT / "experimental_settings" / f"{stem}.yaml"
+        if ref_file.exists():
+            return stem, "/".join(parts[n:]), ref_file
+    return value, "", None
 
 
 def _resolve_name_ref(value: str, *, debug: bool) -> Setting:
@@ -970,12 +990,11 @@ def _resolve_name_ref(value: str, *, debug: bool) -> Setting:
     produces, under the debug outputs root (owner ruling 9, 2026-09-24). A walk without
     `--debug` keys to the real run.
     """
-    stem, sep, name = value.partition("/")
-    if not sep:
-        raise SchemaError(f"{value!r}: a reference is <workflow>/<setting>")
-    ref_file = ROOT / "experimental_settings" / f"{stem}.yaml"
-    if not ref_file.exists():
-        raise SchemaError(f"{value!r}: no such workflow file {ref_file}")
+    stem, name, ref_file = _split_reference(value)
+    if ref_file is None:
+        raise SchemaError(
+            f"{value!r}: a reference is <workflow>/<setting>, and no prefix of it names a "
+            f"workflow file under {ROOT / 'experimental_settings'}")
     pair = (stem, name)
     if pair in _RESOLVING:
         cycle = _RESOLVING[_RESOLVING.index(pair):] + [pair]
@@ -1442,7 +1461,7 @@ def _load_all(ref_file: Path, base_name: str, *, debug: bool, overrides: dict,
         if not children_extras:
             raise SchemaError(f"{base_name}/{child}: no such child of {base_name}")
 
-    file_stem = Path(ref_file).stem
+    file_stem = workflow_name_of(ref_file)
     settings = []
     for suffix, extra in children_extras:
         full, authored = _merge_one(workflow, common, named, debug=debug, overrides=overrides, extra=extra)
