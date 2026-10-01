@@ -127,6 +127,39 @@ elapsed_s 4.2 s to 60.3 s (`jobs/runs.jsonl`).
 | `train-c01a3052dca5`: cgen import, 0.6B full | NVIDIA RTX A6000, 47 GiB, tokyo105 c1 | not printed | heartbeat span 31.5 s; registry elapsed_s 696.5 | - | ok | 2026-09-30 | `<O>/train/c01a3052dca5/heartbeat/`, `jobs/runs.jsonl` |
 | `train-4bd4a2483c43`: ctool import, 4B LoRA (merged) | NVIDIA RTX A6000, 47 GiB, tokyo105 c2 | not printed | heartbeat span 401.2 s; registry elapsed_s 577.6 | - | ok | 2026-09-30 | `<O>/train/4bd4a2483c43/heartbeat/`, `jobs/runs.jsonl` |
 | `train-9fc3053bacbb`: cgen import, 4B LoRA (merged) | NVIDIA RTX A6000, 47 GiB, tokyo105 c3 | not printed | heartbeat span 414.3 s; registry elapsed_s 518.7 | - | ok | 2026-09-30 | `<O>/train/9fc3053bacbb/heartbeat/`, `jobs/runs.jsonl` |
+
+The 16 full-size runs of 2026-10-01, every one `gpt_oss_120b` with 6 loop pieces on one agent server
+(tensor parallel 1) and, for `inject`, one probe service holding the two imported checkpoints on a
+47 GiB tokyo105 card. "span" is the loop heartbeat span of the run's last launch over the tasks that
+launch sampled (148 where a 20-task probe check had run first in the same directory), and tasks/h is
+derived from it. The agent service's memory is the startup row above (weights 61.43 GiB). Source of
+every number: `<O>/{sample,inject}/<key>/{heartbeat/,records/,service_agent_0.json}` and
+`jobs/runs.jsonl`. Two runs attached to another run's live agent server instead of starting one
+(`service_agent_0.json` `attached_to`), and one of those shared the server with a sample loop of the
+full-history collection for its whole run, which is the slowest row.
+
+| run | agent card | probe card | span | throughput | outcome |
+|---|---|---|---|---|---|
+| `sample-c160f9b60374` baseline, 168 tasks (2 launches: 20 then 148) | H200 NVL 140 GiB, tokyo108 c5 | render-only, no card | 2.89 h over 148 | 51.2 tasks/h | ok |
+| `inject-74712990ac26` no-probe | H200, tokyo108 c4 | tokyo105 c2 | 3.23 h over 168 | 52.0 tasks/h | ok |
+| `inject-72c23fd46459` 0.6B p1_e1 theta 0.6 (2 launches) | H200, tokyo108 c5 | tokyo105 c5 | 2.85 h over 148 | 52.0 tasks/h | ok |
+| `inject-ad366c00da69` 0.6B p1_e1 theta 0.9 | H200, tokyo108 c4 | tokyo105 c2 | 3.19 h over 168 | 52.6 tasks/h | ok |
+| `inject-1c7b8ffdd0ab` 0.6B p2_e1 theta 0.6 | H200, tokyo108 c4 | tokyo105 c2 | 2.97 h over 168 | 56.5 tasks/h | ok |
+| `inject-80e10e89df9c` 0.6B p2_e1 theta 0.9 | H100 NVL 93 GiB, tokyo108 c0 | tokyo105 c6 | 3.13 h over 168 | 53.6 tasks/h | ok |
+| `inject-dc35488d6337` 0.6B p2_e2 theta 0.6 | H100, tokyo108 c2 | tokyo105 c3 | 3.05 h over 168 | 55.0 tasks/h | ok |
+| `inject-eda749a39d28` 0.6B p2_e2 theta 0.9 | H100, tokyo108 c0 | tokyo105 c6 | 3.03 h over 168 | 55.5 tasks/h | ok |
+| `inject-ed14606424c0` 0.6B no-fill theta 0.6 (3 launches: 20 tasks; one `launch_failed`, probe session never created; 148) | attached to `sample-e09d7f1730d6`'s server on tokyo108 c1 (H100), shared with that collection's loop | tokyo105 c1 | 4.94 h over 148 | 30.0 tasks/h | ok |
+| `inject-f5787ec9c62c` 4B p1_e1 theta 0.6 | H100, tokyo108 c1 | tokyo105 c1 | 3.67 h over 168 | 45.8 tasks/h | ok |
+| `inject-bab0be3ab39c` 4B p1_e1 theta 0.9 | H100, tokyo108 c1 | tokyo105 c1 | 3.99 h over 168 | 42.1 tasks/h | ok |
+| `inject-216699c06f2f` 4B p2_e1 theta 0.6 | H100, tokyo108 c2 | tokyo105 c3 | 3.64 h over 168 | 46.2 tasks/h | ok |
+| `inject-792c4cf33d29` 4B p2_e1 theta 0.9 | H100, tokyo108 c2 | tokyo105 c3 | 3.77 h over 168 | 44.6 tasks/h | ok |
+| `inject-de47f00b28d0` 4B p2_e2 theta 0.6 | attached to `sample-cbd7426da34f`'s debug server on tokyo108 c3 (H200), alone on it | tokyo105 c4 | 3.27 h over 168 | 51.4 tasks/h | ok |
+| `inject-3415d8a5c5e8` 4B p2_e2 theta 0.9 | attached to the same server on tokyo108 c3 | tokyo105 c4 | 3.67 h over 168 | 45.8 tasks/h | ok |
+| `inject-65f7690bb03a` 4B no-fill theta 0.6 (2 launches) | H200, tokyo108 c5 | tokyo105 c5 | 3.14 h over 148 | 47.2 tasks/h | ok |
+
+Read across the rows: a 0.6B-pair inject run on its own card is 52 to 57 tasks/h on H100 and H200
+alike, a 4B-pair run 42 to 51 tasks/h, so the probe service on the 47 GiB card, not the agent card,
+sets the pace; two loops on one agent server ran at 30 tasks/h.
 | `train-ec299a4fbeb7` (chain of the full-history probe code, commit ac88d7e, `train.save_passes=true build.probe_text_max_chars=3000 eval.checkpoint=pass_1`): ctool, full, 0.6B, debug (8 train events, 1 step, 1 pass), with the pass_1/ copy and prediction rows from best/ and pass_1/ | NVIDIA RTX A6000, 47 GiB, tokyo105 c7 | not printed | train_log start to save_pass 69 s; heartbeat span 89.9 s; registry elapsed_s 173.3 | - | ok; its eval b7bace690b2b read predictions_pass_1.parquet | 2026-10-01 | `<O>/debug/train/ec299a4fbeb7/{train_log.jsonl,heartbeat/,pass_1/}`, `<O>/debug/eval/b7bace690b2b/`, `jobs/runs.jsonl` |
 
 ## Previous pipeline, previous trainer at 4096 tokens per event
