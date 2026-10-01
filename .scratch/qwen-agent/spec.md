@@ -262,7 +262,7 @@ collection_2026_10_02_qwen3pt8_27b_three_rounds_ctool_qwen3_0pt6b_full:
 
 ### 5.4 Open points for gyb on these two
 
-1. Qwen3.8-27B's reasoning tier: the template's `xhigh` (no code change), or a named tier
-   (the code change of 5.2).
+1. Qwen3.8-27B's reasoning tier: DECIDED (gyb, 2026-10-02: "use Extra-high"). It is the
+   template's `xhigh`, which applies when a request names no tier, so no code change.
 2. top_p and top_k, as open point 3 of section 4; the Qwen3.6 card's presence penalty 1.5
    is not sent by our client either way.
