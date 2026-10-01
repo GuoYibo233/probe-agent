@@ -3,25 +3,47 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
-| `inject-ad366c00da69` | 2026-10-01 05:31 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p1_e1',inject.theta=0.9 | `067a32f` | launching | - | - |
+| `score-afc063b72ecd` | 2026-10-01 11:51 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p2_e1',inject.theta=0.6 | `2806c11` | ok | success=0.5714 base_success=0.5655 delta_success=0.006 spec_tool_agree=0.2005 spec_call_agree=0.017 n_records=168 | report.md |
+| `inject-ed14606424c0` | 2026-10-01 11:22 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_nofill_theta_0pt6_qwen3_0pt6b_full_tuning | `fbda2da` | launching | - | - |
+| `sample-e09d7f1730d6` | 2026-10-01 11:19 | sample | full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `fbda2da` | launching | - | - |
+| `eval-6ad541f6f925` | 2026-10-01 11:18 | eval | full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `fbda2da` | ok | - | report.md |
+| `score-39d0fa306660` | 2026-10-01 11:18 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_nofill_theta_0pt6_qwen3_4b_lora_tuning | `fbda2da` | ok | success=0.5952 base_success=0.5655 delta_success=0.0298 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=168 | report.md |
+| `score-200423969f0a` | 2026-10-01 11:18 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p1_e1',inject.theta=0.9 | `fbda2da` | ok | success=0.5476 base_success=0.5655 delta_success=-0.0179 spec_tool_agree=0.2425 spec_call_agree=0.0457 n_records=168 | report.md |
+| `build-85ff55c4ace3` | 2026-10-01 11:12 | build | full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `fbda2da` | ok | - | report.md |
+| `train-c441c343b21a` | 2026-10-01 11:12 | train | full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `fbda2da` | ok | objective=0.5 val_wacc=0.5 val_lastcut_acc=0.375 | - |
+| `score-531120a32225` | 2026-10-01 11:06 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p2_e1',inject.theta=0.9 | `fbda2da` | ok | success=0.5417 base_success=0.5655 delta_success=-0.0238 spec_tool_agree=0.2072 spec_call_agree=0.023 n_records=168 | report.md |
+| `inject-dc35488d6337` | 2026-10-01 11:06 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p2_e2',inject.theta=0.6 | `fbda2da` | launching | - | - |
+| `score-9022c71faac2` | 2026-10-01 11:00 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p2_e2',inject.theta=0.9 | `fbda2da` | ok | success=0.5238 base_success=0.5655 delta_success=-0.0417 spec_tool_agree=0.1486 spec_call_agree=0.0391 n_records=168 | report.md |
+| `inject-80e10e89df9c` | 2026-10-01 10:32 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p2_e1',inject.theta=0.9 | `fbda2da` | launching | - | - |
+| `score-dac8b20dbf63` | 2026-10-01 10:31 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p2_e2',inject.theta=0.9 | `fbda2da` | ok | success=0.5417 base_success=0.5655 delta_success=-0.0238 spec_tool_agree=0.068 spec_call_agree=0.025 n_records=168 | report.md |
+| `inject-1c7b8ffdd0ab` | 2026-10-01 08:49 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p2_e1',inject.theta=0.6 | `fbda2da` | ok | - | - |
+| `score-08c20c746611` | 2026-10-01 08:48 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p1_e1',inject.theta=0.9 | `fbda2da` | ok | success=0.6369 base_success=0.5655 delta_success=0.0714 spec_tool_agree=0.1854 spec_call_agree=0.0417 n_records=168 | report.md |
+| `inject-65f7690bb03a` | 2026-10-01 08:06 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_nofill_theta_0pt6_qwen3_4b_lora_tuning | `fbda2da` | ok | - | - |
+| `score-879f2c59b26c` | 2026-10-01 08:05 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p1_e1',inject.theta=0.6 | `fbda2da` | ok | success=0.5952 base_success=0.5655 delta_success=0.0298 spec_tool_agree=0.225 spec_call_agree=0.0371 n_records=168 | report.md |
+| `inject-eda749a39d28` | 2026-10-01 07:25 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p2_e2',inject.theta=0.9 | `fbda2da` | ok | - | - |
+| `score-c21fd916c5c2` | 2026-10-01 07:23 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p2_e2',inject.theta=0.6 | `fbda2da` | ok | success=0.5357 base_success=0.5655 delta_success=-0.0298 spec_tool_agree=0.1863 spec_call_agree=0.0361 n_records=168 | report.md |
+| `score-b0b2e33791ac` | 2026-10-01 07:22 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p1_e1',inject.theta=0.6 | `fbda2da` | ok | success=0.631 base_success=0.5655 delta_success=0.0655 spec_tool_agree=0.2462 spec_call_agree=0.0439 n_records=168 | report.md |
+| `inject-3415d8a5c5e8` | 2026-10-01 07:18 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p2_e2',inject.theta=0.9 | `96a511a` | ok | - | - |
+| `inject-792c4cf33d29` | 2026-10-01 07:17 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p2_e1',inject.theta=0.9 | `96a511a` | ok | - | - |
+| `score-4aff829c7a7e` | 2026-10-01 07:16 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p2_e1',inject.theta=0.6 | `96a511a` | ok | success=0.5893 base_success=0.5655 delta_success=0.0238 spec_tool_agree=0.2138 spec_call_agree=0.0202 n_records=168 | report.md |
+| `inject-bab0be3ab39c` | 2026-10-01 07:15 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p1_e1',inject.theta=0.9 | `96a511a` | ok | - | - |
+| `inject-ad366c00da69` | 2026-10-01 05:31 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p1_e1',inject.theta=0.9 | `067a32f` | ok | - | - |
 | `score-0dc3e77edb87` | 2026-10-01 05:29 | score | inject/run_2026_09_30_test_split_168_tasks_arm_no_probe | `067a32f` | ok | success=0.5595 base_success=0.5655 delta_success=-0.006 n_records=168 | report.md |
-| `inject-72c23fd46459` | 2026-10-01 05:09 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p1_e1',inject.theta=0.6 | `067a32f` | launching | - | - |
+| `inject-72c23fd46459` | 2026-10-01 05:09 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p1_e1',inject.theta=0.6 | `067a32f` | ok | - | - |
 | `score-447fec4a995e` | 2026-10-01 05:05 | score | baseline/run_2026_09_30_test_split_168_tasks_baseline | `0cfd890` | ok | success=0.5655 n_records=168 | report.md |
 | `eval-b7bace690b2b` | 2026-10-01 04:17 | eval | train_probe/ctool_qwen3_0pt6b | `ac88d7e` | ok | - | report.md |
 | `train-ec299a4fbeb7` | 2026-10-01 04:15 | train | train_probe/ctool_qwen3_0pt6b | `ac88d7e` | ok | objective=0.609375 val_wacc=0.390625 val_lastcut_acc=0.375 | - |
 | `build-d79f0c57af7a` | 2026-10-01 04:14 | build | train_probe/ctool_qwen3_0pt6b | `ac88d7e` | ok | - | report.md |
-| `inject-de47f00b28d0` | 2026-10-01 03:23 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p2_e2',inject.theta=0.6 | `7f87b9f` | launching | - | - |
-| `inject-216699c06f2f` | 2026-10-01 03:22 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p2_e1',inject.theta=0.6 | `7f87b9f` | launching | - | - |
-| `inject-f5787ec9c62c` | 2026-10-01 03:20 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p1_e1',inject.theta=0.6 | `7f87b9f` | launching | - | - |
-| `sample-cbd7426da34f` | 2026-10-01 03:19 | sample | full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `4960dda` | launching | - | - |
+| `inject-de47f00b28d0` | 2026-10-01 03:23 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p2_e2',inject.theta=0.6 | `7f87b9f` | ok | - | - |
+| `inject-216699c06f2f` | 2026-10-01 03:22 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p2_e1',inject.theta=0.6 | `7f87b9f` | ok | - | - |
+| `inject-f5787ec9c62c` | 2026-10-01 03:20 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p1_e1',inject.theta=0.6 | `7f87b9f` | ok | - | - |
+| `sample-cbd7426da34f` | 2026-10-01 03:19 | sample | full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `4960dda` | ok | - | - |
 | `sample-abebbd2326fd` | 2026-10-01 03:06 | sample | train_probe/ctool_qwen3_0pt6b | `e41d917` | ok | - | - |
 | `inject-74712990ac26` | 2026-10-01 02:11 | inject | inject/run_2026_09_30_test_split_168_tasks_arm_no_probe | `9938c75` | ok | - | - |
 | `sample-c160f9b60374` | 2026-10-01 02:08 | sample | baseline/run_2026_09_30_test_split_168_tasks_baseline | `4aac6fe` | ok | - | - |
 | `score-011385c65ff8` | 2026-10-01 02:07 | score | inject/nf_0pt6b_full/build.hist_rounds=3,inject.theta=0.6 | `f717fc0` | ok | success=0.7 base_success=0.5 delta_success=0.2 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=20 | report.md |
 | `score-01406cbef9e1` | 2026-10-01 02:07 | score | inject/nf_4b_lora/build.hist_rounds=3,inject.theta=0.6 | `f717fc0` | ok | success=0.5 base_success=0.5 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=20 | report.md |
 | `score-212a4c488c8f` | 2026-10-01 02:07 | score | inject/sw_0pt6b_full/build.hist_rounds=3,inject.format='p1_e1',inject.theta=0.6 | `f717fc0` | ok | success=0.6 base_success=0.5 delta_success=0.1 spec_tool_agree=0.2466 spec_call_agree=0.0365 n_records=20 | report.md |
-| `inject-ed14606424c0` | 2026-10-01 01:36 | inject | inject/nf_0pt6b_full/build.hist_rounds=3,inject.theta=0.6 | `f717fc0` | ok | - | - |
-| `inject-65f7690bb03a` | 2026-10-01 01:30 | inject | inject/nf_4b_lora/build.hist_rounds=3,inject.theta=0.6 | `f717fc0` | ok | - | - |
 | `eval-7d7d0979db51` | 2026-09-30 23:43 | eval | train_probe/imp_ctool_0pt6b_full | `2a40ff1` | ok | imported=1 | report.md |
 | `eval-43d104eda03c` | 2026-09-30 23:43 | eval | train_probe/imp_cgen_0pt6b_full | `2a40ff1` | ok | imported=1 | report.md |
 | `eval-ff4d5eecc49c` | 2026-09-30 23:43 | eval | train_probe/imp_ctool_4b_lora | `2a40ff1` | ok | imported=1 | report.md |
