@@ -70,7 +70,7 @@ qwen3_30b_a3b_thinking_2507:
     quantization: null
     max_model_len: 131072
     served_model_name: qwen3-30b-a3b-thinking-2507
-    env_result: {}
+    env_result: {VLLM_USE_FLASHINFER_SAMPLER: "0"}
     extra_flags: ""
   serving:
     host: tokyo108
@@ -92,7 +92,7 @@ qwen3pt5_35b_a3b:
     quantization: null
     max_model_len: 131072
     served_model_name: qwen3.5-35b-a3b
-    env_result: {}
+    env_result: {VLLM_USE_FLASHINFER_SAMPLER: "0"}
     extra_flags: "--language-model-only"
   serving:
     host: tokyo108
@@ -183,7 +183,7 @@ qwen3pt6_35b_a3b:
     quantization: null
     max_model_len: 131072
     served_model_name: qwen3.6-35b-a3b
-    env_result: {}
+    env_result: {VLLM_USE_FLASHINFER_SAMPLER: "0"}
     extra_flags: "--language-model-only"
   serving:
     host: tokyo108
@@ -205,7 +205,7 @@ qwen3pt8_27b:
     quantization: null
     max_model_len: 131072
     served_model_name: qwen3.8-27b
-    env_result: {}
+    env_result: {VLLM_USE_FLASHINFER_SAMPLER: "0"}
     extra_flags: "--language-model-only"
   serving:
     host: tokyo108
@@ -259,6 +259,27 @@ collection_2026_10_02_qwen3pt8_27b_three_rounds_ctool_qwen3_0pt6b_full:
   train:  {lr: 1.0e-5, epochs: 3, max_len: 8192, grad_ckpt: true, save_passes: true}
   eval:   {risk: [0.10, 0.05]}
 ```
+
+### 5.3a The first smoke, 2026-10-02 05:02 JST: both servers died at startup
+
+`sample-71747e8787c5` (Qwen3.6-35B-A3B, tokyo108 card 3) and `sample-2a60b1340c81`
+(Qwen3.8-27B, tokyo108 card 5), both `--debug --allow-dirty`, both `launch_failed`
+(`alive_check`). Both servers loaded their weights (64.69 GiB in 470.7 s and 50.22 GiB in
+346.7 s, `log/1.txt` "Model loading took") and then died in vLLM's startup sampler run with
+`FileNotFoundError: [Errno 2] No such file or directory: 'ninja'`.
+
+Cause: the rows of 5.3 as first written carried `env_result: {}`. vLLM then uses the
+FlashInfer top-k / top-p sampler (`log/1.txt` "Using FlashInfer for top-p & top-k
+sampling."), which compiles its kernel with `ninja` at first use; `ninja` is in the vLLM
+venv's `bin/` but on no `PATH` the server process has, and tokyo108 has no system `ninja`.
+The `gpt_oss_120b` row switches that sampler off with
+`env_result: {VLLM_USE_FLASHINFER_SAMPLER: "0"}`, so its servers never reached this.
+
+Fix: the four Qwen rows carry the same `env_result` as the `gpt_oss_120b` row, which also
+keeps one sampler implementation across the agent models. The rows of sections 3 and 5.3
+above are corrected; the two rows already pasted into `models/table.yaml` still carry
+`env_result: {}` and need the same edit by gyb. `env_result` is part of the key, so the
+sample directories move; nothing real has run under the old key.
 
 ### 5.4 Open points for gyb on these two
 
