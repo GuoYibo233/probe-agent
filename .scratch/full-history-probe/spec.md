@@ -181,6 +181,27 @@ copies make the pass count a cheap question: one three-pass run gives all three 
 6. The 3-round control probe on the same collection, for the fair comparison.
 7. The generators and the larger backbones, after the classifier result.
 
+## 6a. Run log of the collection (sample-e09d7f1730d6)
+
+- 2026-10-01 11:18 JST: launched from `draft/full_history` on tokyo108 cards 1, 3, 5 (three
+  servers, 18 loop pieces) after the draft setting's `--debug` walk passed end to end.
+  Measured rate 110 to 140 task runs per hour (one server shared with a full-test run until
+  16:20), against the 177 estimated from the 30-step rate.
+- 12:59 JST: loop piece 15 stopped advancing; its record `302c169_1__s4267` and its log
+  `log/15.txt` have pages stuck on tokyo108's NFS client (`folio_wait_bit_common`): any
+  read of either file from tokyo108 blocks, reads from another machine work. `run.py ls`
+  did not flag the piece.
+- 16:23 JST: killed by me at 598 finished records, to relaunch on six servers; that
+  relaunch was refused by the session's permission classifier and was not retried.
+- 16:24 and 17:24 JST: two relaunch walks on the original three cards hung on the two
+  stuck files (the second after writing its start row). Both files were copied to the
+  session scratchpad and removed from the run directory; the hung `run.py` processes on
+  tokyo108 (2367565, 2376903) are in uninterruptible disk wait with a kill pending.
+- 17:59 JST: relaunched on cards 1, 3, 5; the partial directory is continued.
+- Open for gyb: the six-server relaunch (`sample.replicas=6 sample.pieces=36` on all six
+  tokyo108 cards) halves the remaining time; a loop piece stuck in an NFS write is not
+  seen by `run.py ls`, and a walk that reads a stuck file hangs without a message.
+
 ## 7. Data reused, not re-collected
 
 The August trajectories (1,260 runs, 4 seeds, 30 steps, the old harness) stay on the net

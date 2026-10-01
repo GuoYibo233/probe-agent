@@ -1,0 +1,11 @@
+@hb {"done": 0, "total": 1575, "unit": "task", "ts": 1790821448.1423979}
+@hb {"done": 1, "total": 1575, "unit": "task", "ts": 1790821822.7442923, "tok_in": 89774, "tok_out": 18282}
+@hb {"done": 2, "total": 1575, "unit": "task", "ts": 1790822661.8885975, "tok_in": 142050, "tok_out": 43653}
+@hb {"done": 3, "total": 1575, "unit": "task", "ts": 1790823225.548015, "tok_in": 137801, "tok_out": 30149}
+@hb {"done": 4, "total": 1575, "unit": "task", "ts": 1790823795.758733, "tok_in": 99723, "tok_out": 29658}
+@hb {"done": 5, "total": 1575, "unit": "task", "ts": 1790824413.8553112, "tok_in": 74423, "tok_out": 33531}
+@hb {"done": 6, "total": 1575, "unit": "task", "ts": 1790825127.845249, "tok_in": 139978, "tok_out": 38348}
+@hb {"done": 7, "total": 1575, "unit": "task", "ts": 1790825618.6128016, "tok_in": 95720, "tok_out": 25230}
+@hb {"done": 8, "total": 1575, "unit": "task", "ts": 1790826058.5583353, "tok_in": 82690, "tok_out": 23332}
+@hb {"done": 9, "total": 1575, "unit": "task", "ts": 1790826814.8462307, "tok_in": 106937, "tok_out": 40162}
+@hb {"done": 10, "total": 1575, "unit": "task", "ts": 1790827144.6669252, "tok_in": 81694, "tok_out": 17235}
