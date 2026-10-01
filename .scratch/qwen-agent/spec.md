@@ -120,3 +120,149 @@ qwen3pt5_35b_a3b:
 1. Which model first (section 2's proposal, or the cached Qwen3-32B with YaRN).
 2. Temperature: the card's value per model, or 1.0 everywhere for sameness with gpt-oss.
 3. top_p and top_k: the model file's values, or truly unsent (`--generation-config vllm`).
+
+## 5. Qwen3.6-35B-A3B and Qwen3.8-27B (gyb named these two on 2026-10-02)
+
+### 5.1 What the hub's files say (read 2026-10-02, 03:40 JST)
+
+- Both repositories are public, ungated and apache-2.0: `Qwen/Qwen3.6-35B-A3B` (71.9 GB,
+  36.0B parameters in bf16) and `Qwen/Qwen3.8-27B` (55.6 GB, 27.8B parameters in bf16).
+  Both downloads were started at 03:40 JST into
+  `/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3.6-35B-A3B` and `.../Qwen3.8-27B`
+  (logs under `/net/tokyo100-10g/data/str01_01/y-guo/hf/download_<name>.log`).
+- Qwen3.6-35B-A3B has the model class of Qwen3.5-35B-A3B
+  (`Qwen3_5MoeForConditionalGeneration`, 256 experts, a vision tower) and a 262,144-token
+  window. Its chat template differs from Qwen3.5's in two lines: a `preserve_thinking`
+  option that is off unless a request asks for it, and the string form of a tool call's
+  arguments.
+- Qwen3.8-27B is a dense model (`Qwen3_5ForConditionalGeneration`, 64 layers, a vision
+  tower) with a 262,144-token window. Its chat template adds three reasoning tiers,
+  `xhigh`, `medium` and `low`; a request that names none gets `xhigh`, which writes the
+  line "Reasoning effort is set to xhigh. ..." at the start of the system message
+  (`medium` writes no line). `preserve_thinking` is on unless a request turns it off.
+- Both `generation_config.json` files hold temperature 1.0, top_p 0.95, top_k 20. Both
+  cards give temperature 1.0, top_p 0.95, top_k 20 for thinking mode; the Qwen3.6 card
+  adds presence penalty 1.5 for general tasks, the Qwen3.8 card presence penalty 0.0.
+- The tree's vLLM registers both model classes and the probe venv's transformers holds
+  `qwen3_5` and `qwen3_5_moe`. Neither model has been loaded or served here yet.
+
+### 5.2 What fits the committed family module, and what does not
+
+- `models/agent_models/qwen3.py` sends the role and the content of each message and the
+  thinking switch, nothing else, and reads the template and the end-of-turn ids from the
+  bound weights directory. Qwen3.6-35B-A3B therefore needs no code change.
+- Qwen3.8-27B runs through the same module at the template's own tier, `xhigh`. Naming
+  another tier in a setting needs a code change: the family's `EFFORTS` and the
+  `generation.effort` values in `experimental_settings/schema.py` (PROPOSED, not written).
+- The proof for both is the `--debug` walk: the server's render check compares the local
+  ids with vLLM's chat endpoint id for id.
+
+### 5.3 Rows for gyb to paste
+
+`constants/path_models.yaml` (the edit was refused to the agent session on 2026-10-02, so
+these two rows are pasted by hand as well):
+
+```yaml
+qwen3.6-35b-a3b:
+  path: /net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3.6-35B-A3B
+  note: own replica, registered 2026-10-02; MoE (36B total, 3B active, the model class of Qwen3.5-35B-A3B) with a vision tower that --language-model-only leaves unloaded, bf16; agent family qwen3
+qwen3.8-27b:
+  path: /net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3.8-27B
+  note: own replica, registered 2026-10-02; dense 27.8B with a vision tower that --language-model-only leaves unloaded, bf16; its chat template writes a reasoning-effort line into the system message (xhigh when the request names none); agent family qwen3
+```
+
+`models/table.yaml`:
+
+```yaml
+qwen3pt6_35b_a3b:
+  role: agent
+  family: qwen3
+  result:
+    weights: qwen3.6-35b-a3b
+    dtype: bfloat16
+    quantization: null
+    max_model_len: 131072
+    served_model_name: qwen3.6-35b-a3b
+    env_result: {}
+    extra_flags: "--language-model-only"
+  serving:
+    host: tokyo108
+    port: 8106
+    gpu_memory_utilization: 0.92
+    tensor_parallel_size: 1
+    env:
+      LD_LIBRARY_PATH: /home/y-guo/reproduce/new1/envs/cuda-compat-13.0
+      CUDA_DEVICE_ORDER: PCI_BUS_ID
+      VLLM_CACHE_ROOT: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache
+      TRITON_CACHE_DIR: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton
+
+qwen3pt8_27b:
+  role: agent
+  family: qwen3
+  result:
+    weights: qwen3.8-27b
+    dtype: bfloat16
+    quantization: null
+    max_model_len: 131072
+    served_model_name: qwen3.8-27b
+    env_result: {}
+    extra_flags: "--language-model-only"
+  serving:
+    host: tokyo108
+    port: 8107
+    gpu_memory_utilization: 0.92
+    tensor_parallel_size: 1
+    env:
+      LD_LIBRARY_PATH: /home/y-guo/reproduce/new1/envs/cuda-compat-13.0
+      CUDA_DEVICE_ORDER: PCI_BUS_ID
+      VLLM_CACHE_ROOT: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache
+      TRITON_CACHE_DIR: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton
+```
+
+`experimental_settings/draft/full_history_qwen.yaml`, two blocks per model in the shape
+of the file's Qwen3.5 blocks (temperature 1.0 is both cards' thinking-mode value):
+
+```yaml
+collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the full-history classification probe on trajectories from Qwen3.6-35B-A3B; temperature 1.0 per the model card, the rest as the gpt-oss collection"}
+  models: {agent: qwen3pt6_35b_a3b, probe: qwen3_0pt6b}
+  generation: {temperature: 1.0}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
+
+collection_2026_10_02_qwen3pt6_35b_a3b_three_rounds_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the three-round control on the same Qwen3.6-35B-A3B collection"}
+  models: {agent: qwen3pt6_35b_a3b, probe: qwen3_0pt6b}
+  generation: {temperature: 1.0}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 3, probe_result_cap: 400}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 8192, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
+
+collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the full-history classification probe on trajectories from Qwen3.8-27B at the template's own reasoning tier (xhigh); temperature 1.0 per the model card, the rest as the gpt-oss collection"}
+  models: {agent: qwen3pt8_27b, probe: qwen3_0pt6b}
+  generation: {temperature: 1.0}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
+
+collection_2026_10_02_qwen3pt8_27b_three_rounds_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the three-round control on the same Qwen3.8-27B collection"}
+  models: {agent: qwen3pt8_27b, probe: qwen3_0pt6b}
+  generation: {temperature: 1.0}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 3, probe_result_cap: 400}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 8192, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
+```
+
+### 5.4 Open points for gyb on these two
+
+1. Qwen3.8-27B's reasoning tier: the template's `xhigh` (no code change), or a named tier
+   (the code change of 5.2).
+2. top_p and top_k, as open point 3 of section 4; the Qwen3.6 card's presence penalty 1.5
+   is not sent by our client either way.
