@@ -79,9 +79,12 @@ def read_records(run_dir: Path) -> dict:
     steps = fires = hits = splices = tok_in = tok_out = 0
     fired_tasks: set[str] = set()
     steps_per_task: list[int] = []
+    fires_per_task: dict[str, int] = {}
     for path in sorted((run_dir / "records").glob("*.jsonl")):
         rows = [json.loads(line) for line in path.open()]
         task_id = rows[0].get("task_id") if rows else None
+        if task_id:
+            fires_per_task[task_id] = sum(1 for r in rows if r.get("type") == "spec")
         action = {r["step"]: r.get("action") or "" for r in rows if r.get("type") == "env"}
         n_steps = 0
         for r in rows:
@@ -103,7 +106,7 @@ def read_records(run_dir: Path) -> dict:
         steps += n_steps
         steps_per_task.append(n_steps)
     return {"steps": steps, "fires": fires, "hits": hits, "splices": splices, "tok_in": tok_in,
-            "tok_out": tok_out, "fired_tasks": fired_tasks,
+            "tok_out": tok_out, "fired_tasks": fired_tasks, "fires_per_task": fires_per_task,
             "steps_mean": (sum(steps_per_task) / len(steps_per_task)) if steps_per_task else 0.0}
 
 
@@ -129,6 +132,17 @@ def paired(a: dict, b: dict) -> tuple[int, int, int]:
 
 def pct(x: float | None) -> str:
     return "-" if x is None else f"{100 * x:.1f}%"
+
+
+def sign_test_p(a_only: int, b_only: int) -> float:
+    """Exact two-sided binomial p over the discordant pairs (a_only wins vs b_only wins at p=0.5)."""
+    from math import comb
+    n = a_only + b_only
+    if n == 0:
+        return 1.0
+    k = min(a_only, b_only)
+    tail = sum(comb(n, i) for i in range(k + 1)) / 2 ** n
+    return min(1.0, 2 * tail)
 
 
 def main() -> int:
@@ -162,7 +176,7 @@ def main() -> int:
 
     # 1. every run
     lines += ["## 1. Every run", "",
-              "| run | key | solved | aborts | vs baseline: +/- | vs no-probe: +/- | tasks fired | fires | fire hit rate | steps/task | out tokens/task | hours |",
+              "| run | key | solved | aborts | vs baseline: +/- (p) | vs no-probe: +/- (p) | tasks fired | fires | fire hit rate | steps/task | out tokens/task | hours |",
               "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         sc, rec = r["score"], r["rec"]
@@ -171,10 +185,10 @@ def main() -> int:
         vb = vn = "-"
         if sc and base and r["label"] != "baseline":
             a, b, _ = paired(sc["per_task"], base)
-            vb = f"+{a} / -{b}"
+            vb = f"+{a} / -{b} ({sign_test_p(a, b):.2f})"
         if sc and nop and r["label"] not in ("baseline", "no-probe"):
             a, b, _ = paired(sc["per_task"], nop)
-            vn = f"+{a} / -{b}"
+            vn = f"+{a} / -{b} ({sign_test_p(a, b):.2f})"
         key = d.name if (d := r["dir"]) else "-"
         n = r["n_records"] or 1
         fired = f"{len(rec['fired_tasks'])}/{r['n_records']}" if rec else "-"
@@ -184,8 +198,9 @@ def main() -> int:
         tok = f"{rec['tok_out'] / n:.0f}" if rec else "-"
         hours = f"{r['span_h']:.1f}" if r["span_h"] else "-"
         lines.append(f"| {r['label']} | {r['stage']}-{key} | {solved} | {aborts} | {vb} | {vn} | {fired} | {fires} | {hit} | {spt} | {tok} | {hours} |")
-    lines += ["", "`vs baseline: +a / -b`: a tasks this run solved that the baseline did not, b the reverse; the same against the no-probe run. "
-              "`fire hit rate`: share of fires whose predicted API name is in the code the agent executed at that step.", ""]
+    lines += ["", "`vs baseline: +a / -b (p)`: a tasks this run solved that the baseline did not, b the reverse, p the exact two-sided sign test over those a+b tasks; the same against the no-probe run. "
+              "`fire hit rate`: share of fires whose predicted API name is in the code the agent executed at that step. "
+              "`hours`: span of the loop heartbeats over every launch of the directory (the baseline and the three directories that first ran their 20-task probe check include the gap between the two launches).", ""]
 
     # 2. means by group
     probe_rows = [r for r in rows if r["arm"] == "probe" and r["score"]]
@@ -206,18 +221,22 @@ def main() -> int:
         lines.append(f"| {lab} | {sum(sc['per_task'].values()) if sc else '-'} |")
     lines.append("")
 
-    # 3. fired vs not fired tasks
-    lines += ["## 3. Success on tasks where the probe fired at least once, against the same tasks in the no-probe run", "",
-              "| run | tasks fired | solved among them | no-probe solved the same tasks | tasks never fired | solved among them | no-probe solved the same tasks |",
-              "|---|---|---|---|---|---|---|"]
+    # 3. tasks by how often the probe fired in them
+    buckets = [(1, 3), (4, 8), (9, 15), (16, 10 ** 6)]
+    lines += ["## 3. Tasks bucketed by how many times the probe fired in them, with the no-probe run's result on the same tasks", "",
+              "Each cell: tasks in the bucket, solved in this run / solved in the no-probe run. The probe fired at least once in every task of every run.", "",
+              "| run | " + " | ".join(f"{lo}-{hi} fires" if hi < 10 ** 6 else f"{lo}+ fires" for lo, hi in buckets) + " |",
+              "|---|" + "---|" * len(buckets)]
     for r in rows:
         if r["arm"] not in ("probe", "probe_nofill") or not r["score"] or not r["rec"] or not nop:
             continue
         pt = r["score"]["per_task"]
-        fired = [t for t in pt if t in r["rec"]["fired_tasks"]]
-        quiet = [t for t in pt if t not in r["rec"]["fired_tasks"]]
-        lines.append(f"| {r['label']} | {len(fired)} | {sum(pt[t] for t in fired)} | {sum(nop.get(t, False) for t in fired)} "
-                     f"| {len(quiet)} | {sum(pt[t] for t in quiet)} | {sum(nop.get(t, False) for t in quiet)} |")
+        fpt = r["rec"]["fires_per_task"]
+        cells = []
+        for lo, hi in buckets:
+            ts = [t for t in pt if lo <= fpt.get(t, 0) <= hi]
+            cells.append(f"{len(ts)} tasks, {sum(pt[t] for t in ts)} / {sum(nop.get(t, False) for t in ts)}" if ts else "-")
+        lines.append(f"| {r['label']} | " + " | ".join(cells) + " |")
     lines.append("")
 
     # 4. task-level agreement

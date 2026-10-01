@@ -4,30 +4,30 @@
 The probes are the August imports (0.6B full: ctool `train-f80df32ec8e4`, cgen `train-c01a3052dca5`; 4B LoRA: ctool `train-4bd4a2483c43`, cgen `train-9fc3053bacbb`).
 Every number below is read from the run's score report, records or heartbeats; `solved` is the score report's success count over 168 tasks.
 
-**Unfinished runs (numbers below are partial for them):** no-fill 0.6B full theta 0.6 (117/168 records)
+**Unfinished runs (numbers below are partial for them):** no-fill 0.6B full theta 0.6 (118/168 records)
 
 ## 1. Every run
 
-| run | key | solved | aborts | vs baseline: +/- | vs no-probe: +/- | tasks fired | fires | fire hit rate | steps/task | out tokens/task | hours |
+| run | key | solved | aborts | vs baseline: +/- (p) | vs no-probe: +/- (p) | tasks fired | fires | fire hit rate | steps/task | out tokens/task | hours |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | baseline | sample-c160f9b60374 | 95/168 | 0 | - | - | 0/168 | 0 | - | 20.0 | 36838 | 5.9 |
-| no-probe | inject-74712990ac26 | 94/168 | 0 | +20 / -21 | - | 0/168 | 0 | - | 20.6 | 37046 | 3.2 |
-| probe 0.6B full p1_e1 theta 0.6 | inject-72c23fd46459 | 100/168 | 0 | +29 / -24 | +25 / -19 | 168/168 | 1942 | 42.7% | 18.9 | 32836 | 6.5 |
-| probe 0.6B full p1_e1 theta 0.9 | inject-ad366c00da69 | 107/168 | 1 | +29 / -17 | +32 / -19 | 168/168 | 480 | 34.4% | 19.7 | 35655 | 3.2 |
-| probe 0.6B full p2_e1 theta 0.6 | inject-1c7b8ffdd0ab | 96/168 | 0 | +28 / -27 | +22 / -20 | 168/168 | 2120 | 40.6% | 19.4 | 30462 | 3.0 |
-| probe 0.6B full p2_e1 theta 0.9 | inject-80e10e89df9c | 97/168 | 0 | +32 / -30 | +25 / -22 | 168/168 | 574 | 23.3% | 19.8 | 32847 | 3.1 |
-| probe 0.6B full p2_e2 theta 0.6 | inject-dc35488d6337 | 104/168 | 0 | +31 / -22 | +31 / -21 | 168/168 | 2338 | 36.9% | 20.3 | 29619 | 3.1 |
-| probe 0.6B full p2_e2 theta 0.9 | inject-eda749a39d28 | 91/168 | 0 | +22 / -26 | +20 / -23 | 168/168 | 721 | 18.7% | 20.5 | 31052 | 3.0 |
-| no-fill 0.6B full theta 0.6 | inject-ed14606424c0 | - | - | - | - | 117/117 | 1475 | 64.8% | 19.6 | 35611 | 12.6 |
-| probe 4B LoRA p1_e1 theta 0.6 | inject-f5787ec9c62c | 106/168 | 0 | +29 / -18 | +28 / -16 | 168/168 | 2120 | 41.8% | 18.9 | 32905 | 3.7 |
-| probe 4B LoRA p1_e1 theta 0.9 | inject-bab0be3ab39c | 92/168 | 0 | +21 / -24 | +20 / -22 | 168/168 | 635 | 35.4% | 19.9 | 34928 | 4.0 |
-| probe 4B LoRA p2_e1 theta 0.6 | inject-216699c06f2f | 99/168 | 0 | +30 / -26 | +25 / -20 | 168/168 | 2325 | 41.5% | 19.4 | 31120 | 3.6 |
-| probe 4B LoRA p2_e1 theta 0.9 | inject-792c4cf33d29 | 91/168 | 0 | +22 / -26 | +19 / -22 | 168/168 | 695 | 30.5% | 19.5 | 33155 | 3.8 |
-| probe 4B LoRA p2_e2 theta 0.6 | inject-de47f00b28d0 | 90/168 | 0 | +22 / -27 | +20 / -24 | 168/168 | 2490 | 34.5% | 19.9 | 28562 | 3.3 |
-| probe 4B LoRA p2_e2 theta 0.9 | inject-3415d8a5c5e8 | 88/168 | 0 | +20 / -27 | +21 / -27 | 168/168 | 767 | 24.3% | 19.7 | 32153 | 3.7 |
-| no-fill 4B LoRA theta 0.6 | inject-65f7690bb03a | 100/168 | 0 | +22 / -17 | +24 / -18 | 168/168 | 2543 | 63.9% | 20.5 | 38131 | 9.7 |
+| no-probe | inject-74712990ac26 | 94/168 | 0 | +20 / -21 (1.00) | - | 0/168 | 0 | - | 20.6 | 37046 | 3.2 |
+| probe 0.6B full p1_e1 theta 0.6 | inject-72c23fd46459 | 100/168 | 0 | +29 / -24 (0.58) | +25 / -19 (0.45) | 168/168 | 1942 | 42.7% | 18.9 | 32836 | 6.5 |
+| probe 0.6B full p1_e1 theta 0.9 | inject-ad366c00da69 | 107/168 | 1 | +29 / -17 (0.10) | +32 / -19 (0.09) | 168/168 | 480 | 34.4% | 19.7 | 35655 | 3.2 |
+| probe 0.6B full p2_e1 theta 0.6 | inject-1c7b8ffdd0ab | 96/168 | 0 | +28 / -27 (1.00) | +22 / -20 (0.88) | 168/168 | 2120 | 40.6% | 19.4 | 30462 | 3.0 |
+| probe 0.6B full p2_e1 theta 0.9 | inject-80e10e89df9c | 97/168 | 0 | +32 / -30 (0.90) | +25 / -22 (0.77) | 168/168 | 574 | 23.3% | 19.8 | 32847 | 3.1 |
+| probe 0.6B full p2_e2 theta 0.6 | inject-dc35488d6337 | 104/168 | 0 | +31 / -22 (0.27) | +31 / -21 (0.21) | 168/168 | 2338 | 36.9% | 20.3 | 29619 | 3.1 |
+| probe 0.6B full p2_e2 theta 0.9 | inject-eda749a39d28 | 91/168 | 0 | +22 / -26 (0.67) | +20 / -23 (0.76) | 168/168 | 721 | 18.7% | 20.5 | 31052 | 3.0 |
+| no-fill 0.6B full theta 0.6 | inject-ed14606424c0 | - | - | - | - | 118/118 | 1495 | 64.8% | 19.7 | 35842 | 12.7 |
+| probe 4B LoRA p1_e1 theta 0.6 | inject-f5787ec9c62c | 106/168 | 0 | +29 / -18 (0.14) | +28 / -16 (0.10) | 168/168 | 2120 | 41.8% | 18.9 | 32905 | 3.7 |
+| probe 4B LoRA p1_e1 theta 0.9 | inject-bab0be3ab39c | 92/168 | 0 | +21 / -24 (0.77) | +20 / -22 (0.88) | 168/168 | 635 | 35.4% | 19.9 | 34928 | 4.0 |
+| probe 4B LoRA p2_e1 theta 0.6 | inject-216699c06f2f | 99/168 | 0 | +30 / -26 (0.69) | +25 / -20 (0.55) | 168/168 | 2325 | 41.5% | 19.4 | 31120 | 3.6 |
+| probe 4B LoRA p2_e1 theta 0.9 | inject-792c4cf33d29 | 91/168 | 0 | +22 / -26 (0.67) | +19 / -22 (0.76) | 168/168 | 695 | 30.5% | 19.5 | 33155 | 3.8 |
+| probe 4B LoRA p2_e2 theta 0.6 | inject-de47f00b28d0 | 90/168 | 0 | +22 / -27 (0.57) | +20 / -24 (0.65) | 168/168 | 2490 | 34.5% | 19.9 | 28562 | 3.3 |
+| probe 4B LoRA p2_e2 theta 0.9 | inject-3415d8a5c5e8 | 88/168 | 0 | +20 / -27 (0.38) | +21 / -27 (0.47) | 168/168 | 767 | 24.3% | 19.7 | 32153 | 3.7 |
+| no-fill 4B LoRA theta 0.6 | inject-65f7690bb03a | 100/168 | 0 | +22 / -17 (0.52) | +24 / -18 (0.44) | 168/168 | 2543 | 63.9% | 20.5 | 38131 | 9.7 |
 
-`vs baseline: +a / -b`: a tasks this run solved that the baseline did not, b the reverse; the same against the no-probe run. `fire hit rate`: share of fires whose predicted API name is in the code the agent executed at that step.
+`vs baseline: +a / -b (p)`: a tasks this run solved that the baseline did not, b the reverse, p the exact two-sided sign test over those a+b tasks; the same against the no-probe run. `fire hit rate`: share of fires whose predicted API name is in the code the agent executed at that step. `hours`: span of the loop heartbeats over every launch of the directory (the baseline and the three directories that first ran their 20-task probe check include the gap between the two launches).
 
 ## 2. Solved tasks, mean over runs of a group (probe arm only)
 
@@ -46,23 +46,25 @@ Every number below is read from the run's score report, records or heartbeats; `
 | no-fill 0.6B full theta 0.6 | - |
 | no-fill 4B LoRA theta 0.6 | 100 |
 
-## 3. Success on tasks where the probe fired at least once, against the same tasks in the no-probe run
+## 3. Tasks bucketed by how many times the probe fired in them, with the no-probe run's result on the same tasks
 
-| run | tasks fired | solved among them | no-probe solved the same tasks | tasks never fired | solved among them | no-probe solved the same tasks |
-|---|---|---|---|---|---|---|
-| probe 0.6B full p1_e1 theta 0.6 | 168 | 100 | 94 | 0 | 0 | 0 |
-| probe 0.6B full p1_e1 theta 0.9 | 168 | 107 | 94 | 0 | 0 | 0 |
-| probe 0.6B full p2_e1 theta 0.6 | 168 | 96 | 94 | 0 | 0 | 0 |
-| probe 0.6B full p2_e1 theta 0.9 | 168 | 97 | 94 | 0 | 0 | 0 |
-| probe 0.6B full p2_e2 theta 0.6 | 168 | 104 | 94 | 0 | 0 | 0 |
-| probe 0.6B full p2_e2 theta 0.9 | 168 | 91 | 94 | 0 | 0 | 0 |
-| probe 4B LoRA p1_e1 theta 0.6 | 168 | 106 | 94 | 0 | 0 | 0 |
-| probe 4B LoRA p1_e1 theta 0.9 | 168 | 92 | 94 | 0 | 0 | 0 |
-| probe 4B LoRA p2_e1 theta 0.6 | 168 | 99 | 94 | 0 | 0 | 0 |
-| probe 4B LoRA p2_e1 theta 0.9 | 168 | 91 | 94 | 0 | 0 | 0 |
-| probe 4B LoRA p2_e2 theta 0.6 | 168 | 90 | 94 | 0 | 0 | 0 |
-| probe 4B LoRA p2_e2 theta 0.9 | 168 | 88 | 94 | 0 | 0 | 0 |
-| no-fill 4B LoRA theta 0.6 | 168 | 100 | 94 | 0 | 0 | 0 |
+Each cell: tasks in the bucket, solved in this run / solved in the no-probe run. The probe fired at least once in every task of every run.
+
+| run | 1-3 fires | 4-8 fires | 9-15 fires | 16+ fires |
+|---|---|---|---|---|
+| probe 0.6B full p1_e1 theta 0.6 | 2 tasks, 0 / 1 | 41 tasks, 30 / 31 | 95 tasks, 61 / 55 | 30 tasks, 9 / 7 |
+| probe 0.6B full p1_e1 theta 0.9 | 125 tasks, 80 / 68 | 43 tasks, 27 / 26 | - | - |
+| probe 0.6B full p2_e1 theta 0.6 | 1 tasks, 0 / 1 | 25 tasks, 20 / 18 | 96 tasks, 60 / 62 | 46 tasks, 16 / 13 |
+| probe 0.6B full p2_e1 theta 0.9 | 96 tasks, 57 / 55 | 71 tasks, 39 / 39 | 1 tasks, 1 / 0 | - |
+| probe 0.6B full p2_e2 theta 0.6 | 1 tasks, 0 / 1 | 20 tasks, 15 / 15 | 93 tasks, 59 / 57 | 54 tasks, 30 / 21 |
+| probe 0.6B full p2_e2 theta 0.9 | 69 tasks, 37 / 38 | 92 tasks, 50 / 54 | 7 tasks, 4 / 2 | - |
+| probe 4B LoRA p1_e1 theta 0.6 | 1 tasks, 0 / 0 | 31 tasks, 22 / 23 | 94 tasks, 68 / 60 | 42 tasks, 16 / 11 |
+| probe 4B LoRA p1_e1 theta 0.9 | 87 tasks, 45 / 49 | 79 tasks, 46 / 44 | 2 tasks, 1 / 1 | - |
+| probe 4B LoRA p2_e1 theta 0.6 | - | 22 tasks, 20 / 17 | 85 tasks, 52 / 57 | 61 tasks, 27 / 20 |
+| probe 4B LoRA p2_e1 theta 0.9 | 64 tasks, 35 / 42 | 102 tasks, 56 / 52 | 1 tasks, 0 / 0 | 1 tasks, 0 / 0 |
+| probe 4B LoRA p2_e2 theta 0.6 | - | 11 tasks, 8 / 10 | 87 tasks, 58 / 61 | 70 tasks, 24 / 23 |
+| probe 4B LoRA p2_e2 theta 0.9 | 61 tasks, 30 / 36 | 97 tasks, 57 / 54 | 10 tasks, 1 / 4 | - |
+| no-fill 4B LoRA theta 0.6 | - | 14 tasks, 12 / 13 | 78 tasks, 54 / 54 | 76 tasks, 34 / 27 |
 
 ## 4. Tasks by how many of the 14 probe-pair runs solved them
 
