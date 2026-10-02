@@ -7,7 +7,7 @@ description: >-
   `run.py ls`, and wrap up by re-running the same command. Invoke whenever
   Dungeon♂Master says "run", "train", "inference", or any GPU work needs starting in new1.
   Chinese triggers: "跑程序" / "跑实验" / "跑一下" / "发射" / "用显卡跑" / "起个任务".
-version: 2.0.0
+version: 2.1.0
 ---
 
 # gpu-run
