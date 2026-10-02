@@ -66,7 +66,8 @@ for one; never take a card that is not free and never launch on a smaller one.
 Before the launch, state an estimate: the work size (tasks x runs, or training steps)
 divided by the median speed of the same task on that card model in the `Runs by card type`
 table (a debug row's speed does not transfer to full sizes), or, for an older run, the hand
-table. Say which row the speed comes from, or that no row exists.
+table. Say which row the speed comes from, or that no row exists. A train row's speed counts
+the training steps with their validation; the prediction pass comes on top of it.
 
 ## 3. Commit, then smoke
 

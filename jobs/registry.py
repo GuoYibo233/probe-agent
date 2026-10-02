@@ -246,7 +246,7 @@ CARD_TASK_FIELDS = {
     "sample": ("models.agent",),
     "inject": ("models.agent",),
     "train": ("models.probe", "probe.method", "probe.tuning", "probe.lora_r",
-              "train.max_len", "train.events_per_mb", "train.grad_ckpt"),
+              "train.max_len", "train.events_per_mb", "train.grad_ckpt", "train.import_from"),
 }
 # An inject run's two probe-service checkpoints: the name the record gives each, and the entry of
 # the run's settings.yaml `_upstream` that keys the train run it comes from.

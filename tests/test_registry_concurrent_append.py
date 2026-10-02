@@ -421,7 +421,8 @@ class CardRecordTest(unittest.TestCase):
             "launch": 2,
             "task": {"stage": "train", "debug": False, "models.probe": "qwen3_4b",
                      "probe.method": "ctool", "probe.tuning": "lora", "probe.lora_r": 16,
-                     "train.max_len": 8192, "train.events_per_mb": 4, "train.grad_ckpt": True},
+                     "train.max_len": 8192, "train.events_per_mb": 4, "train.grad_ckpt": True,
+                     "train.import_from": None},
             "pieces": [{"index": 0, "kind": "train", "host": "tokyo108", "gpus": "0",
                         "card_model": "NVIDIA H100 NVL", "card_gib": 93, "peak_gib": 62.5,
                         "failure": "memory", "failure_line": _OOM_LINE[:300]}],
@@ -614,7 +615,8 @@ class CardRecordTest(unittest.TestCase):
             "launch": 2,
             "task": {"stage": "train", "debug": False, "models.probe": "qwen3_4b",
                      "probe.method": "ctool", "probe.tuning": "lora", "probe.lora_r": 16,
-                     "train.max_len": 8192, "train.events_per_mb": 4, "train.grad_ckpt": True},
+                     "train.max_len": 8192, "train.events_per_mb": 4, "train.grad_ckpt": True,
+                     "train.import_from": None},
             # The earlier incarnation's out-of-memory line lies before this one's offset.
             "pieces": [{"index": 0, "kind": "train", "host": "tokyo108", "gpus": "4",
                         "card_model": "NVIDIA H200 NVL", "card_gib": 140, "peak_gib": 30.0,
@@ -684,7 +686,8 @@ class CardRecordTest(unittest.TestCase):
         "launch": 1,
         "task": {"stage": "train", "debug": False, "models.probe": "qwen3_4b",
                  "probe.method": "ctool", "probe.tuning": "lora", "probe.lora_r": 16,
-                 "train.max_len": 8192, "train.events_per_mb": 4, "train.grad_ckpt": True},
+                 "train.max_len": 8192, "train.events_per_mb": 4, "train.grad_ckpt": True,
+                 "train.import_from": None},
         "pieces": [{"index": 0, "kind": "train", "host": "tokyo108", "gpus": "0",
                     "card_model": "NVIDIA H100 NVL", "card_gib": 93, "peak_gib": 91.5,
                     "failure": "memory", "failure_line": _OOM_LINE[:300]}],
@@ -760,9 +763,11 @@ class CardRecordTest(unittest.TestCase):
 
 _TRAIN_TASK = {"stage": "train", "debug": False, "models.probe": "qwen3_4b",
                "probe.method": "ctool", "probe.tuning": "lora", "probe.lora_r": 16,
-               "train.max_len": 8192, "train.events_per_mb": 4, "train.grad_ckpt": True}
+               "train.max_len": 8192, "train.events_per_mb": 4, "train.grad_ckpt": True,
+               "train.import_from": None}
 _TRAIN_TASK_FIELDS = ("models.probe=qwen3_4b probe.method=ctool probe.tuning=lora probe.lora_r=16 "
-                      "train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=True")
+                      "train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=True "
+                      "train.import_from=None")
 
 
 def _train_piece(gpus: str, model: str, gib: int, peak: float, failure=None, line=None) -> dict:

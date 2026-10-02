@@ -368,7 +368,9 @@ def run(run_dir: Path, method) -> None:
         if cfg.train.grad_ckpt:
             probe.grad_checkpointing(True)
 
-        _emit(hb, 0, steps, "step")   # the model has finished loading (8.4)
+        # The model has finished loading (8.4). The beat counts from the step this incarnation
+        # starts at, so a resumed incarnation's rate and remaining time cover its own steps only.
+        _emit(hb, resume_step or 0, steps, "step")
 
         opt = torch.optim.AdamW(probe.trainable_parameters(), lr=cfg.train.lr, weight_decay=0.01)
         warmup_steps = int(steps * cfg.train.warmup_ratio)

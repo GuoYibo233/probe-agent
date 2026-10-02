@@ -95,7 +95,9 @@ A finish row gains one field, `card_record`:
   - `inject`: `models.agent`, and for the probe service the score and gen checkpoints'
     backbone and tuning;
   - `train`: `models.probe`, `probe.method`, `probe.tuning`, `probe.lora_r`,
-    `train.max_len`, `train.events_per_mb`, `train.grad_ckpt`.
+    `train.max_len`, `train.events_per_mb`, `train.grad_ckpt`, `train.import_from` (an
+    imported checkpoint trains nothing, so its record must not join a training row; added by
+    the final review).
   CPU stages (`build`, `eval`, `score`) hold no card and get no `card_record`.
 
 ## The lookup view
