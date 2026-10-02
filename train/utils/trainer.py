@@ -26,6 +26,17 @@ from jobs import registry
 # that wants no warmup writes warmup_ratio: 0.0 explicitly.
 
 LOG_EVERY = 50   # a step line and a heartbeat beat land every this many optimizer steps; a module constant, changes no number
+PREDICTION_UNIT = "prediction split"   # the unit of the prediction phase's beats; the training beats count in "step"
+
+
+def _emit(hb, done: int, total: int, unit: str, **extra) -> None:
+    """One counting beat that carries `mem_gib`: the most card memory torch's caching allocator
+    has reserved in this process so far, in GiB rounded to 0.01 (0.0 on the cpu, where no card
+    is initialised). The figure is a peak since the process started, so the last beat before an
+    out-of-memory death carries the largest figure the run had reached by that beat. Every beat
+    this file emits goes through here."""
+    hb.emit(done, total, unit, mem_gib=round(torch.cuda.max_memory_reserved() / 2**30, 2),
+            **extra)
 
 
 def _sha1(path: Path) -> str:
@@ -356,7 +367,7 @@ def run(run_dir: Path, method) -> None:
         if cfg.train.grad_ckpt:
             probe.grad_checkpointing(True)
 
-        hb.emit(0, steps, "step")   # the model has finished loading (8.4)
+        _emit(hb, 0, steps, "step")   # the model has finished loading (8.4)
 
         opt = torch.optim.AdamW(probe.trainable_parameters(), lr=cfg.train.lr, weight_decay=0.01)
         warmup_steps = int(steps * cfg.train.warmup_ratio)
@@ -394,7 +405,7 @@ def run(run_dir: Path, method) -> None:
             nonlocal window_loss_sum, window_loss_n, last_logged_step
             loss_val = window_loss_sum / max(window_loss_n, 1)
             log(event="step", ep=ep, gstep=gstep, loss=loss_val, lr=sch.get_last_lr()[0])
-            hb.emit(gstep, steps, "step", loss=loss_val)
+            _emit(hb, gstep, steps, "step", loss=loss_val)
             window_loss_sum = 0.0
             window_loss_n = 0
             last_logged_step = gstep
@@ -464,9 +475,9 @@ def run(run_dir: Path, method) -> None:
 
                 if resume_rng is not None:
                     if pending_validation is not None:
-                        hb.emit(gstep, steps, "step")
+                        _emit(hb, gstep, steps, "step")
                         _validate_and_maybe_save(pending_validation)
-                        hb.emit(gstep, steps, "step")
+                        _emit(hb, gstep, steps, "step")
                         pending_validation = None
                     # the fast-forward is over and it ran no forward, so nothing has been drawn
                     # since the checkpoint was written: from here the generators carry the
@@ -506,7 +517,7 @@ def run(run_dir: Path, method) -> None:
 
                     now = time.monotonic()
                     if now - last_checkpoint_t >= cfg.train.checkpoint_hours * 3600:
-                        hb.emit(gstep, steps, "step")
+                        _emit(hb, gstep, steps, "step")
                         _save_last(last_dir, probe, opt, sch, labels=labels,
                                    extra=method.CHECKPOINT_META,
                                    meta={**_checkpoint_meta(cfg), "step": gstep, "epoch": ep,
@@ -517,9 +528,9 @@ def run(run_dir: Path, method) -> None:
                     if is_epoch_end:
                         # The pass itself beats per batch through the hb it is handed
                         # (`Heartbeat.touch`); these two beats bracket it with counting rows.
-                        hb.emit(gstep, steps, "step")
+                        _emit(hb, gstep, steps, "step")
                         _validate_and_maybe_save(ep)
-                        hb.emit(gstep, steps, "step")
+                        _emit(hb, gstep, steps, "step")
 
                     if gstep >= steps:
                         break
@@ -528,9 +539,9 @@ def run(run_dir: Path, method) -> None:
             _log_step(last_epoch_seen)   # the run ended on a step no cadence had logged
 
         if last_epoch_validated != last_epoch_seen:
-            hb.emit(gstep, steps, "step")
+            _emit(hb, gstep, steps, "step")
             _validate_and_maybe_save(last_epoch_seen)
-            hb.emit(gstep, steps, "step")
+            _emit(hb, gstep, steps, "step")
 
         logf.close()
 
@@ -554,8 +565,9 @@ def run(run_dir: Path, method) -> None:
     # as a suspected stall. `total` is the number of prediction splits times the number of weight
     # copies predicted from, and a beat lands after each split but the last; the beat that reaches
     # the total lands once the last prediction file is on disk, so a finished train reads n/n.
-    # Only the finish() row makes the piece done (8.5's first rule), whatever the count reads;
-    # the unit stays 8.4's word for the train stage.
+    # Only the finish() row makes the piece done (8.5's first rule), whatever the count reads.
+    # These beats count in PREDICTION_UNIT, not in steps, so a reader of the beats (`run.py ls`,
+    # the run's speed in the card record) tells the prediction phase from the training steps.
     #
     # best/ is predicted from first, into predictions.parquet, as it always was. Under
     # train.save_passes every pass_<n>/ on disk is predicted from as well, into
@@ -564,7 +576,7 @@ def run(run_dir: Path, method) -> None:
     copies = [("best", best_dir)] + (_pass_copies(run_dir) if cfg.train.save_passes else [])
     predict_splits = list(cfg.train.predict.splits)
     predict_total = len(predict_splits) * len(copies)
-    hb.emit(0, predict_total, "step")
+    _emit(hb, 0, predict_total, PREDICTION_UNIT)
     predictions: dict[str, int] = {}
     splits_done = 0
     for checkpoint, ckpt_dir_of_copy in copies:
@@ -582,7 +594,7 @@ def run(run_dir: Path, method) -> None:
                 pred_rows.extend(method.predict(probe, split_df, probe.tokenizer, cfg, hb))
             splits_done += 1
             if splits_done < predict_total:
-                hb.emit(splits_done, predict_total, "step")
+                _emit(hb, splits_done, predict_total, PREDICTION_UNIT)
 
         if pred_rows:
             pred_df = pl.DataFrame(pred_rows, strict=False)
@@ -594,7 +606,7 @@ def run(run_dir: Path, method) -> None:
         pred_df = pred_df.with_columns(pl.lit(checkpoint).alias("checkpoint"))
         probe_output.write(run_dir / probe_output.file_name(checkpoint), pred_df)
         predictions[checkpoint] = pred_df.height
-    hb.emit(predict_total, predict_total, "step")
+    _emit(hb, predict_total, predict_total, PREDICTION_UNIT)
 
     registry.write_done(
         run_dir, stage="train", key=cfg._key, commit=cfg._commit,
@@ -796,7 +808,7 @@ def _run_import(run_dir: Path, cfg, method, hb) -> None:
     sha1 is in the log line only, so the walk's skip gate does not hash gigabytes on every
     pass); done.json's counts and metrics say `imported: 1`, and its stage_extra carries the
     class order, as a trained run's does, and the source path."""
-    hb.emit(0, 1, "step")
+    _emit(hb, 0, 1, "step")
     source = verify_import_source(cfg, method)
     meta, copied = write_imported_best(source, run_dir / "best", cfg, method, hb)
 
@@ -821,7 +833,7 @@ def _run_import(run_dir: Path, cfg, method, hb) -> None:
         counts={"imported": 1, "files": len(copied)}, era=cfg._era,
         metrics={"imported": 1}, report=None,
         stage_extra={"labels": source["labels"], "imported_from": str(source_dir)})
-    hb.emit(1, 1, "step")
+    _emit(hb, 1, 1, "step")
     hb.finish()
 
 
