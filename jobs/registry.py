@@ -1265,18 +1265,24 @@ def judge_service(piece: dict) -> tuple[str, bool]:
     return "warming up", False
 
 
+def incarnation_dead(verdicts: list[str]) -> bool:
+    """Whether an open launch has pieces and every one of them reads `dead` or `not started`,
+    so no process of this launch is left to write its own finish row. `launch_failed` adds the
+    age condition for the readers that come upon such a launch; `close_dead_incarnation` applies
+    this rule alone, because a relaunch is replacing the launch now."""
+    return bool(verdicts) and all(v in ("dead", "not started") for v in verdicts)
+
+
 def launch_failed(started_at: str, verdicts: list[str]) -> bool:
-    """Whether an open launch never came up (8.1): its start row is older than
-    `DEFAULTS["launch_timeout_s"]` (8.5), it has pieces, and `judge` calls
-    every one of them `dead`, so no process of this launch is left to write
-    its own finish row.
+    """Whether an open launch never came up (8.1): every one of its pieces reads `dead` or
+    `not started` (`incarnation_dead`), and its start row is older than
+    `DEFAULTS["launch_timeout_s"]` (8.5).
 
     One rule, one word, every reader. `run.py ls` writes the `launch_failed`
     finish row for each run this selects (8.1, 8.2) and `sync` writes it for a
     run it reaches first, so the ledger, `RESULTS.md` and the `ls` line carry
     the same word for the same state instead of each naming it their own way."""
-    return (bool(verdicts) and all(v in ("dead", "not started") for v in verdicts)
-            and _age_s(started_at) > DEFAULTS["launch_timeout_s"])
+    return incarnation_dead(verdicts) and _age_s(started_at) > DEFAULTS["launch_timeout_s"]
 
 
 def _attached_to(run_dir: Path, piece: dict) -> str | None:
@@ -1667,6 +1673,36 @@ def kill(run_id: str) -> list[str]:
                 if ok:
                     ended.append(session)
     return ended
+
+
+def close_dead_incarnation(run_id: str, sessions: set) -> bool:
+    """Append the `launch_failed` finish row of `run_id`'s open incarnation when every one of its
+    pieces reads `dead` or `not started` under `sessions` (`incarnation_dead`); True when it
+    appended the row.
+
+    `jobs/launch.launch` (a walk or a `retry`) and `jobs/launch.refire` call this inside the lock
+    hold that appends their start row, right before that append. A start row clears the run's
+    finish (`fold`), so the incarnation it replaces is closed here first, with the row and the
+    card record (`append_finish`) that incarnation owes. The rule is the one `ls` and `sync`
+    close a run by (`launch_failed`) without the age condition, because a person is relaunching
+    the run now. A run with no open start row has no incarnation to close, and a run with a
+    piece of any other verdict (`done`, `healthy`, `warming up`, ...) keeps its incarnation
+    open: a refire restarts one piece beside such siblings."""
+    with lock():
+        entry = fold(_read_rows()).get(run_id)
+        if entry is None or entry["start"] is None or entry["finish"] is not None:
+            return False
+        start = entry["start"]
+        run_dir = Path(start["dir"])
+        verdicts = [verdict for _pv, verdict, _esc
+                    in _judge_pieces(_pieces_of(run_dir, start), run_dir, sessions, start["t"])]
+        if not incarnation_dead(verdicts):
+            return False
+        append_finish(run_id, {
+            "ev": "finish", "t": _now(), "run_id": run_id, "status": "launch_failed",
+            "counts": {}, "metrics": {}, "report": None, "elapsed_s": _age_s(start["t"]),
+        })
+        return True
 
 
 def sync() -> list[str]:

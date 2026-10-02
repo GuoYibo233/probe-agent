@@ -1119,7 +1119,10 @@ def _with_ended(placed: list[dict], ended_sessions: list[str]) -> list[dict]:
 def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, list[dict]]:
     """Launch one stage run's tmux pieces (8.1). Inside one `registry.lock()`
     hold: the launch gate (2.5), the attach test (7.4), the card reservation,
-    the port assignment, and the start-row append with `status: "launching"`.
+    the port assignment, the `launch_failed` finish row of the run's open
+    incarnation when every piece of it reads dead or not started
+    (`registry.close_dead_incarnation`), and the start-row append with
+    `status: "launching"`.
     Then the lock is released and the pieces start in two waves — service
     pieces and their alive check first (an `inject` run's `service_check`
     gate in between), loop pieces last — or, for `train`, its one piece.
@@ -1317,6 +1320,10 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
             "pieces": persisted_pieces,
             "status": "launching",
         }
+        # The open incarnation this launch replaces, when every piece of it reads dead or not
+        # started, gets its `launch_failed` finish row and card record before this start row
+        # clears its finish (`registry.fold`), in this same hold.
+        registry.close_dead_incarnation(run_id, sessions)
         registry.append_start(start_row)
         launch_entry = _launch_entry(
             git, host=_this_host(),
@@ -1522,16 +1529,19 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
     `registry.session_alive` reports the piece's tmux session alive;
     otherwise warns (never refuses) when the piece already has more than one
     `launches` entry, releases its unfinished claims through
-    `data/trajectory_record.release`, re-probes the cards, appends the start
-    row of the incarnation it is about to start, restarts the piece in a new
+    `data/trajectory_record.release`, re-probes the cards, closes the run's
+    open incarnation with a `launch_failed` finish row when every piece of it
+    reads dead or not started (`registry.close_dead_incarnation`), appends the
+    start row of the incarnation it is about to start, restarts the piece in a new
     tmux session under the *same* session name, and rewrites its `meta.json`
     entry and appends a `launches` entry through one `registry.write_meta`
     call.
 
     Everything from reading the piece's entry through `tmux new-session` runs
     inside one `registry.lock()` hold: the liveness test, the claim release,
-    the card re-probe and claim, the start row, the `meta.json` rewrite and the
-    session start. The liveness test is refire's only guard against a second
+    the card re-probe and claim, the dead incarnation's finish row, the start
+    row, the `meta.json` rewrite and the session start. The liveness test is
+    refire's only guard against a second
     refire of the same piece, and the session it tests for exists only once
     `tmux new-session` has returned, so the hold ends after that call; a hold
     that ended before it would let a second `run.py refire` pass the liveness
@@ -1584,8 +1594,8 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
             print(f"jobs/launch.py refire: piece {index} already has {len(prior)} launch entries: "
                   f"{prior}", file=sys.stderr)
 
-        trajectory_record.release(run_dir, registry.live_sessions(),
-                                  registry.DEFAULTS["launch_timeout_s"])
+        sessions = registry.live_sessions()
+        trajectory_record.release(run_dir, sessions, registry.DEFAULTS["launch_timeout_s"])
 
         free_by_host = restrict_to_pool(registry.free(), cards)
         old_gpus = str(target.get("gpus") or "")
@@ -1615,6 +1625,10 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
         # (`incarnation_origin`'s rule), so its card record reads none of the dead one's lines.
         updated_piece["log_offset"] = _log_size(log)
 
+        # The open incarnation, when every piece of it reads dead or not started, gets its
+        # `launch_failed` finish row and card record before the start row below clears its finish
+        # (`registry.fold`); a run with a live sibling piece keeps its incarnation open.
+        registry.close_dead_incarnation(run_id, sessions)
         # 8.1's fixed order: the row naming the cards is on disk before the session that uses them.
         # Its `pieces` is the run's whole current list with this piece's entry replaced, because the
         # card reservation of 2.5 reserves the cards of every piece in the newest start row.
