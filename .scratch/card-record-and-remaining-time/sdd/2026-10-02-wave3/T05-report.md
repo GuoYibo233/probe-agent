@@ -88,3 +88,94 @@ The arithmetic of the acceptance case: (1575 - 300) / 0.03 = 42500 s = 708.3 min
 - At the switch from training to prediction, `registry.rates` takes its recent window over the newest counting beats regardless of unit, so for the first few prediction beats the window mixes step beats and prediction-split beats. While the prediction count is below the last step count the rate comes out `None` and the line prints `left=-`; a window whose first step beat has a `done` at or below the current prediction count would give a mixed rate. This is in `jobs/registry.rates`, outside this ticket; it lasts until the window holds prediction beats only.
 - The open-run test is `status == "launching"`, the start rows' one status word and the test `_close_failed_launches` already uses. If a start row ever carries another word, this test and that one move together.
 - Merge note: the README `tests/` line is one long line and the test module's docstring changed; the wave 2 branches (T03, T04) may touch the same lines, so the merge may need a hand join there.
+
+## Fix round 1
+
+Worktree `/home/y-guo/reproduce/new1-wt/2026-10-02-wave3-T05-fix1` on branch `ticket/2026-10-02-wave3/T05` (checked out from `afa6464`), on yebis. Head after this round: `ab0f602`.
+
+### F1 (critical): an ordinary train run never printed `left=<h>h<mm> (prediction)`
+
+Cause, confirmed: `registry._piece_verdict_dict` handed `rates()` the newest counting beats of every unit. A train piece's step beats end at `done = steps`, its prediction beats count from 0 to `predict_total` (2 or 8 in every setting in the tree), so the 10-beat recent window always started on a step beat with a larger `done` than the prediction count, and `rates()` returned `None` for the whole prediction phase. The previous round's self-review note (the gap "lasts until the window holds prediction beats only") was wrong for these settings, as the finding says.
+
+Fix, in `jobs/registry.py` `_piece_verdict_dict`: the rates (the recent window and the average's first beat) are read over the counting beats whose unit equals the newest counting beat's unit. The stall line's `beat_ts` is still read over all counting beats, as before. Each phase of a train piece now has a rate of its own; the prediction phase has one from its second beat on (its first beat, `0/total`, is a single point and gives no rate, so the line prints `left=-` there). A heartbeat file in one unit (sample, inject, a predict-only relaunch) reads exactly as before. `run.py` needed no change: `_format_left` already labels the phase from the row's unit and computes the time from the row's progress and recent rate.
+
+```diff
+-    recent_slice = counting[-DEFAULTS["typical_beats"]:] if counting else []
+-    avg_rate, recent_rate = rates(counting[0] if counting else None, recent_slice)
++    unit_now = counting[-1].get("unit") if counting else None
++    phase_counting = [b for b in counting if b.get("unit") == unit_now]
++    recent_slice = phase_counting[-DEFAULTS["typical_beats"]:]
++    avg_rate, recent_rate = rates(phase_counting[0] if phase_counting else None, recent_slice)
+```
+
+`jobs/registry.py` is in no stage's code set (`schema.code_files` names no `jobs/` module), so no `jobs/versions.yaml` row is needed.
+
+Test: new case `LsLineTest.test_prediction_phase_rate_is_read_from_its_own_beats` in `tests/test_registry_concurrent_append.py`. It writes a trainer-shaped heartbeat file into a temporary run directory (21 step beats up to 1000/1000 ten seconds apart, five `validate` touches, the closing step beat, then prediction beats 0..3 of 8 a minute apart), reads it through `registry._judge_pieces` and prints the line through the real `run.py`'s `_format_ls_row`. It checks: the training rate is 5.0 steps/s at the end of the step beats; at the first prediction beat the rate is `None` and the line prints `left=-`; at 3/8 the recent and average rates are both 1/60 splits/s and the line prints `left=0h05 (prediction)`. Against the unfixed `jobs/registry.py` this case fails (the 3/8 recent rate is `None`):
+
+```
+$ git checkout jobs/registry.py   # the unfixed file, then the fix re-applied after the run
+$ /home/y-guo/reproduce/new1/external/probe-env/bin/python tests/test_registry_concurrent_append.py LsLineTest
+ERROR: test_prediction_phase_rate_is_read_from_its_own_beats (__main__.LsLineTest.test_prediction_phase_rate_is_read_from_its_own_beats)
+...
+    self.assertAlmostEqual(pv["recent_rate"], 1 / 60)
+TypeError: unsupported operand type(s) for -: 'NoneType' and 'float'
+Ran 5 tests in 0.351s
+FAILED (errors=1)
+```
+
+README: the `jobs/registry.py` line's verdicts clause gains "a piece's rates are read over its counting beats in the newest beat's unit, so a train piece's prediction pass has a rate of its own"; the `tests/` line names the new case. The test module docstring and the `LsLineTest` docstring name it too.
+
+Contracts note: the contracts table row for `rates(first_beat, recent_beats)` says "done per second, over the whole run and over the last 10 beats". `rates()` itself is unchanged; what `_piece_verdict_dict` passes it is now the current unit's beats, so for a train piece "the whole run" reads as "the whole current phase". The contracts are the owner's file under `notes/` and were not edited.
+
+### Verification (fix round 1)
+
+All from the worktree with the main repo's interpreter, on yebis.
+
+```
+$ /home/y-guo/reproduce/new1/external/probe-env/bin/python tests/test_registry_concurrent_append.py
+.....................
+----------------------------------------------------------------------
+Ran 21 tests in 0.735s
+
+OK
+```
+
+```
+$ /home/y-guo/reproduce/new1/external/probe-env/bin/python run.py selfcheck
+selfcheck: 32 python files, 0 problems
+```
+
+The other CPU test modules, each in its own process:
+
+```
+== test_settings_keys
+Ran 25 tests in 23.992s
+OK
+== test_probe_input
+Ran 19 tests in 1.968s
+OK
+== test_record_formats
+Ran 16 tests in 0.090s
+OK
+== test_probe_eval
+Ran 15 tests in 1.984s
+OK
+== test_environment_and_build
+Ran 22 tests in 0.071s
+OK
+== test_qwen3_family
+Ran 13 tests in 27.194s
+OK
+```
+
+`tests/test_packed_loss.py` covers nothing this round changed and was not run.
+
+### Commit (fix round 1)
+
+- `ab0f602` T05: a piece's rates are read over its counting beats in the newest beat's unit, so a train run's prediction phase prints left=<h>h<mm> (prediction) (jobs/registry.py `_piece_verdict_dict`, README lines of jobs/registry.py and tests/, the new LsLineTest case)
+
+### Self-review (fix round 1)
+
+- The second bullet of section 4 above (the mixed window at the phase switch) is resolved by this fix: the window never mixes units now.
+- `judge`'s `slowed` test now compares the recent and average rates within the current phase. Before, during the prediction phase both rates were `None` (the average's first beat was the first step beat, `done` 0, which made the average defined but the recent rate `None`), so `slowed` could not fire there; now it can, on the prediction phase's own rates.
+- The first prediction beat still prints `left=-`, since one beat gives no rate. With `predict_total` of 2 the line shows a time only at 1/2.
