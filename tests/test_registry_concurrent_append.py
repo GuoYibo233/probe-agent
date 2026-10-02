@@ -1,6 +1,8 @@
 """Eight processes appending to jobs/runs.jsonl at once all land, and every line parses; the
-piece verdicts of 8.5 read a finished run as done and a run that lost a piece as dead; and the
-finish row of a card stage's run carries the card record of the incarnation it closes."""
+piece verdicts of 8.5 read a finished run as done and a run that lost a piece as dead; the
+finish row of a card stage's run carries the card record of the incarnation it closes; and a
+relaunch of an open run whose pieces are all dead closes that incarnation with its finish row
+before its own start row."""
 # venv: probe
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ import time
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -262,7 +265,9 @@ _OOM_LINE = ("torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.00
 
 
 class CardRecordTest(unittest.TestCase):
-    """`append_finish` adds a `card_record` to the finish row of a sample, inject or train run.
+    """`append_finish` adds a `card_record` to the finish row of a sample, inject or train run,
+    and a walk's relaunch or a refire of an open run whose pieces are all dead appends that
+    incarnation's `launch_failed` row, record included, before its own start row.
     Every case runs in a temporary tree holding a copy of jobs/registry.py, its own runs.jsonl,
     a fixture constants/cards.yaml and a constants/path_outputs.yaml whose root is under the
     temporary directory, so no case touches the real ledger or NFS."""
@@ -638,6 +643,90 @@ class CardRecordTest(unittest.TestCase):
              "failure": "error",
              "failure_line": "(APIServer pid=21) RuntimeError: Engine core initialization "
                              "failed. See root cause above. Failed core proc(s): {}"}])
+
+    # -- A relaunch of an open run whose pieces are all dead: the dead incarnation's finish row
+    # lands between the two start rows. --
+
+    _GIT = {"commit": "deadbee", "branch": "main", "dirty": False, "dirty_count": 0,
+            "dirty_files": []}
+
+    # The record of the dead incarnation `_dead_train_run` leaves behind.
+    _DEAD_TRAIN_RECORD = {
+        "launch": 1,
+        "task": {"stage": "train", "debug": False, "models.probe": "qwen3_4b",
+                 "probe.method": "ctool", "probe.tuning": "lora", "probe.lora_r": 16,
+                 "train.max_len": 8192, "train.events_per_mb": 4, "train.grad_ckpt": True},
+        "pieces": [{"index": 0, "kind": "train", "host": "tokyo108", "gpus": "0",
+                    "card_model": "NVIDIA H100 NVL", "card_gib": 93, "peak_gib": 91.5,
+                    "failure": "memory", "failure_line": _OOM_LINE[:300]}],
+        "speed": {"unit": "step", "done": 4, "span_s": 200.0, "per_hour": 72.0},
+    }
+
+    def _dead_train_run(self, launch, key: str) -> tuple[str, Path]:
+        """An open train run whose one piece, on card 0 of tokyo108, trained 4 steps and died of
+        memory: its session is gone, its log ends in the error, and no finish row closes it. No
+        host is probed: every session reads gone, and cards 3 and 4 of tokyo108 read free."""
+        run_dir = self._run_dir("train", key)
+        self._write_settings(run_dir, {
+            "_stage": "train", "_key": key, "_debug": False, "data": {"env": "appworld"},
+            "models": {"probe": "qwen3_4b", "probe_row": {"family": "qwen"}},
+            "probe": {"method": "ctool", "tuning": "lora", "lora_r": 16},
+            "train": {"max_len": 8192, "events_per_mb": 4, "grad_ckpt": True}})
+        log = str(run_dir / "log" / "0.txt")
+        piece = {"index": 0, "kind": "train", "host": "tokyo108", "gpus": "0",
+                 "session": f"train-{key}-0", "log": log, "endpoint_file": None,
+                 "beat_launch": 0, "log_offset": 0, "venv": "probe",
+                 "cmd": launch.piece_command("python3", "train.methods.ctool", str(run_dir),
+                                             None, None, "0", log)}
+        run_id = self._start("train", key, run_dir, [piece], launches=1)
+        self._write_beats(run_dir, 0, 0, [
+            {"done": 0, "total": 8, "unit": "step", "ts": 100.0, "mem_gib": 40.0},
+            {"done": 4, "total": 8, "unit": "step", "ts": 300.0, "mem_gib": 91.5}])
+        Path(log).write_text("Traceback (most recent call last):\n"
+                             '  File "/repo/train/utils/trainer.py", line 410, in run\n'
+                             + _OOM_LINE + "\n")
+        self.registry.live_sessions = lambda: set()
+        self.registry.session_alive = lambda host, session: False
+        self.registry.free = lambda: {"tokyo105": [], "tokyo108": [3, 4]}
+        return run_id, run_dir
+
+    def _rows(self) -> list[dict]:
+        text = (self.tree / "jobs" / "runs.jsonl").read_text()
+        return [json.loads(line) for line in text.strip().splitlines()]
+
+    def _assert_closed_then_relaunched(self, run_id: str) -> None:
+        rows = self._rows()
+        self.assertEqual([(r["ev"], r["status"]) for r in rows],
+                         [("start", "launching"), ("finish", "launch_failed"),
+                          ("start", "launching")])
+        self.assertEqual(rows[1]["card_record"], self._DEAD_TRAIN_RECORD)
+        # The relaunch's start row holds the card it claimed and leaves the run open.
+        self.assertEqual(rows[2]["pieces"][0]["gpus"], "3")
+        self.assertIsNone(self.registry.fold(rows)[run_id]["finish"])
+
+    def test_walk_relaunch_closes_the_dead_incarnation_before_its_start_row(self):
+        launch = self._launch()
+        key = "c6c6c6c6c6c6"
+        run_id, run_dir = self._dead_train_run(launch, key)
+        # While the piece's session reads alive, the incarnation stays open and nothing is
+        # appended.
+        self.assertFalse(self.registry.close_dead_incarnation(run_id, {f"train-{key}-0"}))
+        self.assertEqual(len(self._rows()), 1)
+        setting = launch.schema.load_frozen(run_dir)
+        setting._file, setting._name = "train_probe", "fixture"
+        with mock.patch.object(launch, "_start_tmux", return_value=True), \
+                mock.patch.object(launch, "alive_check", return_value=(True, [])):
+            outcome, _pieces = launch.launch("train", setting, run_dir, {}, self._GIT)
+        self.assertEqual(outcome, "up")
+        self._assert_closed_then_relaunched(run_id)
+
+    def test_refire_closes_the_dead_incarnation_before_its_start_row(self):
+        launch = self._launch()
+        key = "d7d7d7d7d7d7"
+        run_id, run_dir = self._dead_train_run(launch, key)
+        with mock.patch.object(launch, "_start_tmux", return_value=True):
+            launch.refire(run_dir, self._GIT)
+        self._assert_closed_then_relaunched(run_id)
 
 
 if __name__ == "__main__":
