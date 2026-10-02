@@ -1,5 +1,10 @@
 # How each task performed on each card
 
+**Frozen history.** Since 2026-10-02 (the card record, merged at 1fc375b) every card-stage
+run records its cards, peak memory, failure reason and speed in its finish row in
+`jobs/runs.jsonl`, and `jobs/RESULTS.md` renders them as the `## Runs by card type` table.
+New runs are recorded there and not here; this file keeps the runs before that date.
+
 This file is for an agent or a person who has to pick the card for a GPU task. It is read
 together with `constants/cards.yaml`, which says which cards exist: per host, per card index,
 the card's model and its memory in GiB. This file says how a task performed on a card type
@@ -7,17 +12,11 @@ when it ran there.
 
 **Picking a card.** Take the smallest card type whose measured peak memory for that task fits
 on the card with margin. A task with no row here is smoked with `--debug` on the card type the
-nearest row suggests (same stage, the closest model, tuning and sizes), and the result of that
-smoke is appended here as a new row.
+nearest row suggests (same stage, the closest model, tuning and sizes); that smoke's result
+lands in the `Runs by card type` table of `jobs/RESULTS.md` by itself.
 
-**Maintaining the table.** After every GPU run that finished, or that failed for memory,
-append the row for that task x card, or update the existing row: the date, the run key
-(`<stage>-<key>`), the sizes (`debug` or the full sizes), the peak memory if one was recorded,
-the wall-clock and the throughput, the outcome, and the source file of every number. Gpu-run
-Phase 6a says where each number comes from.
-
-**Caveat on training rows.** The trainer on this tree prints no peak-memory figure, so a
-training row on this tree has no peak until the trainer records one. The only memory numbers
+**Caveat on training rows.** Before 2026-10-02 the trainer printed no peak-memory figure, so a
+training row here has no peak (the trainer's beats carry `mem_gib` since then). The only memory numbers
 for training on this tree are the out-of-memory messages in the A6000 rows below.
 
 Conventions (from the 2026-09-23 fact report these rows were first copied from):

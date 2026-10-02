@@ -3,8 +3,8 @@ name: gpu-run
 description: >-
   The sole entry point for running any GPU program inside the new1 project: pick the cards
   from the measured card table, estimate the time, commit, smoke with `--debug`, launch with
-  one `run.py <workflow> <setting> --cards ...` call, read progress with `run.py ls`, wrap up
-  by re-running the same command, and record how the run went on its card. Invoke whenever
+  one `run.py <workflow> <setting> --cards ...` call, read progress and remaining time with
+  `run.py ls`, and wrap up by re-running the same command. Invoke whenever
   Dungeon♂Master says "run", "train", "inference", or any GPU work needs starting in new1.
   Chinese triggers: "跑程序" / "跑实验" / "跑一下" / "发射" / "用显卡跑" / "起个任务".
 version: 2.0.0
@@ -25,17 +25,21 @@ guessing.
 
 ## 1. Pick the cards
 
-Read three files first:
+Read these first:
 
+- The `## Runs by card type` table at the end of `jobs/RESULTS.md`: every card-stage run
+  records itself when it ends (task, card model, peak memory, speed, and the quoted line of a
+  memory failure). Its memory failures are the record of what not to repeat.
+- `references/card_performance.md`: the hand-kept record of the runs before 2026-10-02, when
+  the automatic record began.
 - `constants/cards.yaml`: every host and card, with its model and memory.
-- `references/card_performance.md`: how each task ran on each card type (peak memory,
-  speed, outcome). Its failure rows are the record of what not to repeat.
 - `references/gpu_state.md`: drivers and cluster traps.
 
 Then run `run.py free` for the cards that are free right now (never trust an older probe).
 
 Choose the smallest card type on which the same task (stage, model, tuning, text length)
-already ran with margin, and never a card type on which it failed for memory. A task with no
+already ran with margin, and never a card type on which it failed for memory. The launcher
+does not enforce this; the choice is yours. A task with no
 row is smoked on the card type its nearest row suggests; a smoke that runs out of memory
 moves to the next size up. Cards per stage:
 
@@ -59,9 +63,10 @@ for one; never take a card that is not free and never launch on a smaller one.
 
 ## 2. Estimate the time
 
-Before the launch, state an estimate: the work size (tasks x runs, or training events x
-passes) divided by the same task's measured speed on that card type in the card table. Say
-which row the speed comes from, or that no row exists.
+Before the launch, state an estimate: the work size (tasks x runs, or training steps)
+divided by the median speed of the same task on that card model in the `Runs by card type`
+table (a debug row's speed does not transfer to full sizes), or, for an older run, the hand
+table. Say which row the speed comes from, or that no row exists.
 
 ## 3. Commit, then smoke
 
@@ -98,7 +103,8 @@ When unsure, write the second. Commit the row, then repeat the launch command.
 ## 5. Monitor
 
 `run.py ls [workflow] [--debug]` prints one line per run: each piece's verdict, progress,
-recent rate, heartbeat age and cards. Remaining time is (total - done) / rate; say it when
+recent rate, remaining time (`left=`; a train run names its phase, and its training time
+leaves out the prediction pass), heartbeat age and cards. Say the remaining time when
 reporting. Nothing watches in the background; when you check a long run on a schedule,
 check every 30 minutes.
 
@@ -108,12 +114,8 @@ check every 30 minutes.
    tears down its servers (freeing the cards), writes the finish row, and walks on to the
    next stage, which may launch the next GPU stage.
 2. `run.py table`, then commit `jobs/runs.jsonl` and `jobs/RESULTS.md` with the run key in
-   the message.
-3. Add or update the row in `references/card_performance.md` for every GPU run that finished
-   or failed for memory: date, run key, sizes, card type, peak memory, wall-clock, speed,
-   outcome, and the file each number came from (the vLLM log's memory and throughput lines,
-   the heartbeat span, the out-of-memory line quoted from the piece log). Commit it with the
-   two files above.
+   the message. The finish row already carries the run's card record; nothing is written by
+   hand.
 
 ## 7. Interrupt
 

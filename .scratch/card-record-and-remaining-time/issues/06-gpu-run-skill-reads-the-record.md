@@ -1,6 +1,6 @@
 # 06 the gpu-run skill reads the record
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01, 02, 03, 04, 05
 Spec: .scratch/card-record-and-remaining-time/spec.md (section "The skill")
 
@@ -30,3 +30,5 @@ No Python. The files you may touch:
 - The skill stays short: no explanation of how the registry builds the record.
 
 ## Comments
+
+- 2026-10-02: done by the main conversation directly (two text files, no Python), after tickets 01 to 05 merged. Step 1 reads the `## Runs by card type` table first and says the launcher does not enforce the choice; step 2 takes the median speed from it (a debug row's speed does not transfer to full sizes); step 5 names the `left=` field; step 6's hand-written row is gone. `card_performance.md` opens with the frozen-history paragraph, and its "Maintaining the table" paragraph is removed. Covered by the final review.
