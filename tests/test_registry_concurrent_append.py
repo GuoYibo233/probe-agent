@@ -315,6 +315,32 @@ class CardRecordTest(unittest.TestCase):
             for beat in beats:
                 f.write(json.dumps(beat) + "\n")
 
+    def _launch(self):
+        """The tree's jobs/launch.py with its `registry` pointed at this case's temporary copy
+        for the length of the case, so the meta.json writes it makes land in the temporary
+        tree."""
+        if str(REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(REPO_ROOT))
+        launch = importlib.import_module("jobs.launch")
+        self.addCleanup(setattr, launch, "registry", launch.registry)
+        launch.registry = self.registry
+        return launch
+
+    def _relaunch(self, launch, run_dir: Path, placed: list[dict]) -> dict[int, dict]:
+        """What a launch does to its pieces' entries before and as their sessions start:
+        `incarnation_origin` records where each log's new output starts, then each session's
+        `started` stamp is written, as `_start_wave` writes it."""
+        placed = [dict(p, run_dir=str(run_dir)) for p in placed]
+        origin = launch.incarnation_origin(run_dir, placed)
+        for p in placed:
+            p["started"] = _LAUNCHED_AT
+        self.registry.write_meta(run_dir, pieces=[launch._strip_runtime(p) for p in placed])
+        return origin
+
+    def _meta_pieces(self, run_dir: Path) -> dict[int, dict]:
+        meta = json.loads((run_dir / "meta.json").read_text())
+        return {p["index"]: p for p in meta["pieces"]}
+
     def _finish(self, run_id: str, status: str) -> dict:
         self.registry.append_finish(run_id, {
             "ev": "finish", "t": "2026-10-02 22:00", "run_id": run_id, "status": status,
@@ -509,6 +535,109 @@ class CardRecordTest(unittest.TestCase):
                                     "stage": "build", "key": key, "dir": str(run_dir),
                                     "pieces": [], "status": "launching"})
         self.assertNotIn("card_record", self._finish(f"build-{key}", "ok"))
+
+    def test_relaunched_train_piece_records_none_of_the_earlier_incarnations_log(self):
+        launch = self._launch()
+        key = "a8a8a8a8a8a8"
+        run_dir = self._run_dir("train", key)
+        self._write_settings(run_dir, {
+            "_stage": "train", "_key": key, "_debug": False,
+            "models": {"probe": "qwen3_4b"},
+            "probe": {"method": "ctool", "tuning": "lora", "lora_r": 16},
+            "train": {"max_len": 8192, "events_per_mb": 4, "grad_ckpt": True}})
+        log = run_dir / "log" / "0.txt"
+        first = {"index": 0, "kind": "train", "host": "tokyo108", "gpus": "0",
+                 "session": f"train-{key}-0", "log": str(log), "endpoint_file": None,
+                 "beat_launch": 0}
+        # The first incarnation, on an H100 card, died of memory.
+        run_id = self._start("train", key, run_dir, [first], launches=1)
+        self._relaunch(launch, run_dir, [first])
+        self.assertEqual(self._meta_pieces(run_dir)[0]["log_offset"], 0)
+        self._write_beats(run_dir, 0, 0, [
+            {"done": 0, "total": 8, "unit": "step", "ts": 100.0, "mem_gib": 92.0}])
+        log.write_text("Traceback (most recent call last):\n"
+                       '  File "/repo/train/utils/trainer.py", line 410, in run\n'
+                       + _OOM_LINE + "\n")
+        first_record = self._finish(run_id, "launch_failed")["card_record"]
+        self.assertEqual((first_record["pieces"][0]["failure"],
+                          first_record["pieces"][0]["failure_line"]), ("memory", _OOM_LINE[:300]))
+        # The relaunch on an H200 card: the launcher records the log's size before the session
+        # starts, then the incarnation writes one line and one beat and is killed.
+        second = dict(first, gpus="4", beat_launch=1)
+        run_id = self._start("train", key, run_dir, [second], launches=1)
+        earlier_size = log.stat().st_size
+        self.assertEqual(self._relaunch(launch, run_dir, [second]), {0: {"log_size": earlier_size}})
+        entry = self._meta_pieces(run_dir)[0]
+        self.assertEqual((entry["log_offset"], entry["gpus"], entry["started"]),
+                         (earlier_size, "4", _LAUNCHED_AT))
+        self.assertNotIn("run_dir", entry)
+        with open(log, "a") as f:
+            f.write("loading qwen3_4b on cuda:0\n")
+        self._write_beats(run_dir, 0, 1, [
+            {"done": 0, "total": 8, "unit": "step", "ts": 2000.0, "mem_gib": 30.0}])
+        row = self._finish(run_id, "killed")
+        self.assertEqual(row["card_record"], {
+            "launch": 2,
+            "task": {"stage": "train", "debug": False, "models.probe": "qwen3_4b",
+                     "probe.method": "ctool", "probe.tuning": "lora", "probe.lora_r": 16,
+                     "train.max_len": 8192, "train.events_per_mb": 4, "train.grad_ckpt": True},
+            # The earlier incarnation's out-of-memory line lies before this one's offset.
+            "pieces": [{"index": 0, "kind": "train", "host": "tokyo108", "gpus": "4",
+                        "card_model": "NVIDIA H200 NVL", "card_gib": 140, "peak_gib": 30.0,
+                        "failure": None, "failure_line": None}],
+            "speed": None,
+        })
+
+    def test_relaunched_agent_service_reads_its_figures_and_failure_from_its_offset(self):
+        launch = self._launch()
+        key = "b9b9b9b9b9b9"
+        run_dir = self._run_dir("sample", key)
+        self._write_settings(run_dir, {
+            "_stage": "sample", "_key": key, "_debug": False,
+            "models": {"agent": "qwen3pt8_27b"}, "sample": {"pieces": 1}})
+        pieces = [
+            {"index": 0, "kind": "loop", "host": "saitama", "gpus": "",
+             "session": f"sample-{key}-0", "log": str(run_dir / "log" / "0.txt"),
+             "endpoint_file": None, "beat_launch": 1},
+            {"index": 1, "kind": "service", "host": "tokyo108", "gpus": "5",
+             "session": f"sample-{key}-1", "log": str(run_dir / "log" / "1.txt"),
+             "endpoint_file": "service_agent_0.json"},
+        ]
+        # The first incarnation's service loaded the model, served, and ran out of memory; its
+        # loop piece walked a task. Both logs and the endpoint file are still in the directory.
+        engine = "(EngineCore pid=11) INFO 10-02 20:51:21 "
+        (run_dir / "log" / "0.txt").write_text("task 1 of 3 done\n")
+        (run_dir / "log" / "1.txt").write_text(
+            engine + "[gpu_model_runner.py:5347] Model loading took 61.43 GiB memory and "
+                     "16.769317 seconds\n"
+            + engine + "[gpu_worker.py:560] Available KV cache memory: 63.43 GiB\n"
+            + engine + "[kv_cache_utils.py:2178] Maximum concurrency for 131,072 tokens per "
+                       "request: 12.52x\n"
+            + "(EngineCore pid=11) " + _OOM_LINE + "\n")
+        (run_dir / "service_agent_0.json").write_text(json.dumps({"kind": "agent"}))
+        service_offset = (run_dir / "log" / "1.txt").stat().st_size
+        run_id = self._start("sample", key, run_dir, pieces)
+        origin = self._relaunch(launch, run_dir, pieces)
+        self.assertEqual(origin, {0: {"log_size": len("task 1 of 3 done\n")}})
+        self.assertFalse((run_dir / "service_agent_0.json").exists())
+        entries = self._meta_pieces(run_dir)
+        self.assertEqual((entries[0]["log_offset"], entries[1]["log_offset"]),
+                         (len("task 1 of 3 done\n"), service_offset))
+        # The relaunched service died before vLLM printed a load line.
+        with open(run_dir / "log" / "1.txt", "a") as f:
+            f.write("(APIServer pid=21) Traceback (most recent call last):\n"
+                    '(APIServer pid=21)   File "/venv/vllm/v1/engine/core_client.py", line 92, '
+                    "in make_async_mp_client\n"
+                    "(APIServer pid=21) RuntimeError: Engine core initialization failed. See "
+                    "root cause above. Failed core proc(s): {}\n")
+        row = self._finish(run_id, "launch_failed")
+        self.assertEqual(row["card_record"]["pieces"], [
+            {"index": 1, "kind": "service", "service": "agent", "host": "tokyo108", "gpus": "5",
+             "card_model": "NVIDIA H200 NVL", "card_gib": 140,
+             "weights_gib": None, "kv_cache_gib": None, "max_concurrency": None,
+             "failure": "error",
+             "failure_line": "(APIServer pid=21) RuntimeError: Engine core initialization "
+                             "failed. See root cause above. Failed core proc(s): {}"}])
 
 
 if __name__ == "__main__":

@@ -337,14 +337,18 @@ def _finish_verdicts(pieces: list[dict], run_dir: Path, launch_t: str) -> list[s
 
 def _card_piece(piece: dict, verdict: str | None, run_dir: Path, status: str | None) -> dict:
     """One card-holding piece's entry in the record: where it ran, the card model and memory,
-    its memory figures, and the failure its log names. The failure is read only for a piece
-    whose verdict is `dead` or in a run whose status is not `ok`, and never for a piece that was
-    `not started`, whose log holds only earlier incarnations' lines."""
+    its memory figures, and the failure its log names. Every incarnation appends to the same
+    log (`tee -a`), so the log is read from the entry's `log_offset`, the size the launcher
+    recorded before this incarnation's session started (`jobs/launch.incarnation_origin`); an
+    entry written before that field existed reads from byte 0. The failure is read only for a
+    piece whose verdict is `dead` or in a run whose status is not `ok`, and never for a piece
+    that was `not started`, which wrote nothing in this incarnation."""
     index = piece.get("index")
     kind = piece.get("kind")
     host = piece.get("host")
     gpus = str(piece.get("gpus"))
     log = run_dir / "log" / f"{index}.txt"
+    offset = int(piece.get("log_offset") or 0)
     service = _service_of(piece)
     out: dict = {"index": index, "kind": kind}
     if kind == "service":
@@ -356,13 +360,13 @@ def _card_piece(piece: dict, verdict: str | None, run_dir: Path, status: str | N
     if kind == "train":
         out["peak_gib"] = _guarded(_peak_gib, run_dir, piece)
     elif service == "agent":
-        out.update(_guarded(_agent_memory, log)
+        out.update(_guarded(_agent_memory, log, offset)
                    or {"weights_gib": None, "kv_cache_gib": None, "max_concurrency": None})
     elif service == "probe":
-        out["peak_gib"] = _guarded(_probe_memory, log)
+        out["peak_gib"] = _guarded(_probe_memory, log, offset)
     failure = None
     if verdict != "not started" and (status != "ok" or verdict == "dead"):
-        failure = _guarded(_log_failure, log)
+        failure = _guarded(_log_failure, log, offset)
     out["failure"], out["failure_line"] = failure or (None, None)
     return out
 
@@ -399,62 +403,73 @@ def _peak_gib(run_dir: Path, piece: dict) -> float | None:
     return max(values) if values else None
 
 
-def _agent_memory(log: Path) -> dict:
+def _log_lines(log: Path, offset: int):
+    """The lines of a log from byte `offset` on, decoded as UTF-8."""
+    with open(log, "rb") as f:
+        f.seek(offset)
+        for raw in f:
+            yield raw.decode("utf-8", errors="replace")
+
+
+def _agent_memory(log: Path, offset: int) -> dict:
     """An agent service's memory figures from the three lines vLLM prints as it loads: the
-    weights, the KV cache and the maximum concurrency of the newest load in the log. Every
-    incarnation appends to the same log (`tee -a`), so a load line clears the other two and the
-    cache lines after it fill them in. These lines come early, so the whole log is read."""
+    weights, the KV cache and the maximum concurrency of the newest load in the log from byte
+    `offset` on, where this incarnation's output starts. A load line clears the other two and
+    the cache lines after it fill them in, so a log read from byte 0 (an entry with no recorded
+    offset) gives the newest incarnation's load. These lines come early, so everything after
+    `offset` is read, not only the tail the failure is read from."""
     figures = {"weights_gib": None, "kv_cache_gib": None, "max_concurrency": None}
-    with open(log, encoding="utf-8", errors="replace") as f:
-        for line in f:
-            if "Model loading took" in line:
-                match = _VLLM_WEIGHTS.search(line)
-                if match:
-                    figures = {"weights_gib": float(match.group(1)), "kv_cache_gib": None,
-                               "max_concurrency": None}
-            elif "Available KV cache memory" in line:
-                match = _VLLM_KV_CACHE.search(line)
-                if match:
-                    figures["kv_cache_gib"] = float(match.group(1))
-            elif "Maximum concurrency" in line:
-                match = _VLLM_CONCURRENCY.search(line)
-                if match:
-                    figures["max_concurrency"] = float(match.group(1))
+    for line in _log_lines(log, offset):
+        if "Model loading took" in line:
+            match = _VLLM_WEIGHTS.search(line)
+            if match:
+                figures = {"weights_gib": float(match.group(1)), "kv_cache_gib": None,
+                           "max_concurrency": None}
+        elif "Available KV cache memory" in line:
+            match = _VLLM_KV_CACHE.search(line)
+            if match:
+                figures["kv_cache_gib"] = float(match.group(1))
+        elif "Maximum concurrency" in line:
+            match = _VLLM_CONCURRENCY.search(line)
+            if match:
+                figures["max_concurrency"] = float(match.group(1))
     return figures
 
 
-def _probe_memory(log: Path) -> float | None:
-    """A probe service's memory: the GiB its newest `probe service memory:` line reports
-    reserved after loading its checkpoints; None when the log holds no such line."""
+def _probe_memory(log: Path, offset: int) -> float | None:
+    """A probe service's memory: the GiB its newest `probe service memory:` line from byte
+    `offset` on reports reserved after loading its checkpoints; None when there is no such
+    line."""
     value = None
-    with open(log, encoding="utf-8", errors="replace") as f:
-        for line in f:
-            if "probe service memory" in line:
-                match = _PROBE_SERVICE_MEMORY.search(line)
-                if match:
-                    value = float(match.group(1))
+    for line in _log_lines(log, offset):
+        if "probe service memory" in line:
+            match = _PROBE_SERVICE_MEMORY.search(line)
+            if match:
+                value = float(match.group(1))
     return value
 
 
-def _log_tail(log: Path) -> list[str]:
-    """The lines of a log's last `LOG_TAIL_BYTES`, the first one dropped when the cut fell
-    inside it."""
+def _log_tail(log: Path, offset: int) -> list[str]:
+    """The lines this incarnation wrote at the end of a log: from byte `offset` on, where its
+    output starts, and no more than the last `LOG_TAIL_BYTES`; the first line is dropped when
+    that limit cut inside it."""
     with open(log, "rb") as f:
         f.seek(0, os.SEEK_END)
-        offset = max(0, f.tell() - LOG_TAIL_BYTES)
-        f.seek(offset)
+        start = max(offset, f.tell() - LOG_TAIL_BYTES)
+        f.seek(start)
         data = f.read()
     lines = data.decode("utf-8", errors="replace").splitlines()
-    return lines[1:] if offset > 0 else lines
+    return lines[1:] if start > offset else lines
 
 
-def _log_failure(log: Path) -> tuple[str | None, str | None]:
-    """`(failure, failure_line)` from the tail of a piece's log: `memory` with the newest line
-    that matches one of `MEMORY_FAILURE_PATTERNS`; `error` for any other traceback, with the
-    exception line of the newest one, the first line after its header that is not indented once
-    vLLM's line prefix is set aside; `(None, None)` when the tail holds neither. A quoted line
-    is cut to `FAILURE_LINE_CHARS`."""
-    lines = _log_tail(log)
+def _log_failure(log: Path, offset: int) -> tuple[str | None, str | None]:
+    """`(failure, failure_line)` from the tail of a piece's log that this incarnation wrote
+    (`_log_tail`): `memory` with the newest line that matches one of
+    `MEMORY_FAILURE_PATTERNS`; `error` for any other traceback, with the exception line of the
+    newest one, the first line after its header that is not indented once vLLM's line prefix is
+    set aside; `(None, None)` when the tail holds neither. A quoted line is cut to
+    `FAILURE_LINE_CHARS`."""
+    lines = _log_tail(log, offset)
     for line in reversed(lines):
         if any(pattern in line for pattern in MEMORY_FAILURE_PATTERNS):
             return "memory", line.strip()[:FAILURE_LINE_CHARS]
