@@ -3,6 +3,9 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `eval-841ca6060041` | 2026-10-02 22:07 | eval | train_probe/ctool_qwen3_0pt6b | `92917b0` | ok | coverage@0.1=0.875 trig_acc@0.1=0.2857 earliness@0.1=0.9303 wrong_spec@0.1=0.625 coverage@0.05=0.875 trig_acc@0.05=0.2857 earliness@0.05=0.9303 wrong_spec@0.05=0.625 | report.md |
+| `build-c32f7e47ce60` | 2026-10-02 22:05 | build | train_probe/ctool_qwen3_0pt6b | `92917b0` | ok | - | report.md |
+| `train-3e562de5abb9` | 2026-10-02 22:05 | train | train_probe/ctool_qwen3_0pt6b | `92917b0` | ok | objective=0.59375 val_wacc=0.40625 val_lastcut_acc=0.375 | - |
 | `eval-8a5a8b3fd2b4` | 2026-10-02 21:48 | eval | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `757d006` | ok | coverage@0.1=0.5 trig_acc@0.1=0.4 earliness@0.1=0.5583 wrong_spec@0.1=0.3 coverage@0.05=0.5 trig_acc@0.05=0.4 earliness@0.05=0.5583 wrong_spec@0.05=0.3 | report.md |
 | `train-faad617efcb7` | 2026-10-02 21:46 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `757d006` | ok | objective=0.3220338983050848 val_wacc=0.6779661016949152 val_lastcut_acc=0.5 | - |
 | `build-0ae315ab0369` | 2026-10-02 21:45 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `757d006` | ok | - | report.md |
