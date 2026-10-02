@@ -10,6 +10,29 @@
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/settings_readonly.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/require_cards_on_launch.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/stuck_runs_at_session_start.py\"",
+            "asyncRewake": true,
+            "timeout": 300
+          }
+        ]
       }
     ]
   }
