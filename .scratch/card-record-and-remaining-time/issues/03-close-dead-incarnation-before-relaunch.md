@@ -22,7 +22,7 @@ code through the walk.
 
 - A CPU-only unit test: an open run with one dead train piece, then a relaunch, leaves a
   `launch_failed` finish row with a `card_record` between the two start rows.
-- `run.py selfcheck` green; all CPU test modules pass; `run.py version ... --same` rows where
-  a stage's code set holds a changed file.
+- `run.py selfcheck` green; all CPU test modules pass. No `jobs/versions.yaml` row (no stage's
+  code set holds `jobs/` or `run.py`).
 
 ## Comments

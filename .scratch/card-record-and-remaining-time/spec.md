@@ -130,10 +130,12 @@ the frozen history before the automatic record began.
 
 ## Code-era rows
 
-None of these changes alters what a stage produces. Every stage whose code set
-(`experimental_settings/schema.py`, the stage table's `code` tuple) contains a changed file
-gets a `run.py version <stage> --same --from <commit> --why ...` row in the ticket that
-changes the file.
+None of these changes alters what a stage produces. Of the files the tickets change, only
+`train/utils/trainer.py` (the `train` stage) and `models/probe_models/service.py` (`sample`
+and `inject`) are in a stage's code set (`experimental_settings/schema.py`, the stage
+table's `code` tuple). No ticket branch writes a `jobs/versions.yaml` row, because parallel
+branches appending to its end would conflict; the main conversation writes the `--same`
+rows for those three stages after merging ticket 02.
 
 ## Tickets
 

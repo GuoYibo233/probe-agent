@@ -1,6 +1,6 @@
 # 01 the card record on every finish row
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: -
 Spec: .scratch/card-record-and-remaining-time/spec.md (sections "The record", decisions 4, 5)
 
@@ -38,6 +38,6 @@ Every finish row that `registry.append_finish` (`jobs/registry.py:208`) appends 
   out-of-memory traceback and beats carrying `mem_gib`, and one with an agent service log
   holding the three vLLM lines, and checks every field of both records.
 - `run.py selfcheck` green; all seven test modules pass.
-- `run.py version <stage> --same` rows for every stage whose code set holds a changed file.
+- No `jobs/versions.yaml` row (no stage's code set holds `jobs/` or `run.py`).
 
 ## Comments

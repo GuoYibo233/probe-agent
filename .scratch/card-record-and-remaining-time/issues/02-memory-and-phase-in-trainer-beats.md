@@ -1,6 +1,6 @@
 # 02 memory and phase in the trainer's beats; the probe service's memory line
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: -
 Spec: .scratch/card-record-and-remaining-time/spec.md (sections "The record", "Remaining time")
 
@@ -18,15 +18,16 @@ Spec: .scratch/card-record-and-remaining-time/spec.md (sections "The record", "R
    service (`models/probe_models/service.py`) prints one line to its log,
    `probe service memory: <x> GiB reserved after loading`, from
    `torch.cuda.memory_reserved()`.
-4. README section 2 lines of the changed files updated where they describe beats or logs.
+4. README section 2 lines of the changed files updated where they describe beats or logs,
+   except the `jobs/registry.py` entry, which ticket 01 edits in parallel.
 
 ## Acceptance
 
 - A CPU-only unit test checks that a beat written with `mem_gib` carries it and that a beat
   without it is unchanged.
 - `tests/test_packed_loss.py` and the five CPU modules pass; `run.py selfcheck` green.
-- `run.py version train --same --from <commit> --why ...` (and `inject` if its code set holds
-  the probe service file): the output of no stage changes.
+- No `jobs/versions.yaml` row on this branch: the main conversation writes the `--same` rows
+  for `train`, `sample` and `inject` after the merge (spec, "Code-era rows").
 - A `--debug` walk of one `train_probe` setting is a GPU step: return it as BLOCKED with the
   ready-to-run command.
 
