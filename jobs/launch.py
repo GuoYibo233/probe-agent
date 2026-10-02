@@ -595,18 +595,31 @@ def incarnation_origin(run_dir, pieces) -> dict[int, dict]:
     in `alive_check` and in `agent/run_tasks._wait_for_endpoints` then reads
     this incarnation's own server. Only the pieces this launch places are
     touched, so a piece of this run that this launch does not start keeps its
-    file."""
+    file.
+
+    Every piece, a service included, also has its log's size recorded as the
+    `log_offset` of its `meta.json` entry, written here before any session
+    starts: the byte at which this incarnation's own output starts in the log
+    every incarnation appends to. The card record of the finish row that closes
+    this incarnation reads the log from there (`registry._card_piece`), so an
+    earlier incarnation's failure or memory lines are never recorded on this
+    one."""
     run_dir = Path(run_dir)
     origin: dict[int, dict] = {}
     for p in pieces:
+        p["log_offset"] = _log_size(p.get("log"))
         if p.get("kind") == "service":
             (run_dir / p["endpoint_file"]).unlink(missing_ok=True)
             continue
-        log = Path(p.get("log", ""))
-        origin[p["index"]] = {
-            "log_size": log.stat().st_size if log.exists() else 0,
-        }
+        origin[p["index"]] = {"log_size": p["log_offset"]}
+    registry.write_meta(run_dir, pieces=[_strip_runtime(p) for p in pieces])
     return origin
+
+
+def _log_size(log) -> int:
+    """The size in bytes of a piece's log, 0 while the log does not exist yet."""
+    path = Path(log) if log else None
+    return path.stat().st_size if path is not None and path.is_file() else 0
 
 
 def _log_shows_traceback(log: Path, first_byte: int) -> bool:
@@ -1598,6 +1611,9 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
         # The heartbeat file the restarted incarnation opens, recorded before its session starts
         # (registry.current_beats), so no verdict reads the dead incarnation's rows as this one's.
         updated_piece["beat_launch"] = registry.next_beat_launch(run_dir, index)
+        # Where the restarted incarnation's output starts in the log the dead one appended to
+        # (`incarnation_origin`'s rule), so its card record reads none of the dead one's lines.
+        updated_piece["log_offset"] = _log_size(log)
 
         # 8.1's fixed order: the row naming the cards is on disk before the session that uses them.
         # Its `pieces` is the run's whole current list with this piece's entry replaced, because the

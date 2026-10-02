@@ -81,8 +81,9 @@ def _outputs_config() -> dict:
 def hosts() -> list[dict]:
     """The cluster's hosts from `constants/cards.yaml`, the one file for card facts, read once
     and cached in this module global. Each entry carries the host's `name`, its `alias` where
-    it has one, `cards` (how many cards it has: the length of its per-card list) and
-    `memory_gib` (each card's memory in GiB, by card index)."""
+    it has one, `cards` (how many cards it has: the length of its per-card list),
+    `memory_gib` (each card's memory in GiB, by card index) and `model` (each card's model, by
+    card index)."""
     global _HOSTS
     if _HOSTS is None:
         with open(_repo_root() / "constants" / "cards.yaml") as f:
@@ -90,7 +91,8 @@ def hosts() -> list[dict]:
         _HOSTS = []
         for entry in entries:
             host = {"name": entry["name"], "cards": len(entry["cards"]),
-                    "memory_gib": [int(card["memory_gib"]) for card in entry["cards"]]}
+                    "memory_gib": [int(card["memory_gib"]) for card in entry["cards"]],
+                    "model": [str(card["model"]) for card in entry["cards"]]}
             if "alias" in entry:
                 host["alias"] = entry["alias"]
             _HOSTS.append(host)
@@ -100,6 +102,16 @@ def hosts() -> list[dict]:
 def card_memory_gib() -> dict[str, list[int]]:
     """Host name -> each card's memory in GiB, by card index (`constants/cards.yaml`)."""
     return {host["name"]: host["memory_gib"] for host in hosts()}
+
+
+def card_model(host: str, index: int) -> str | None:
+    """The model of card `index` on `host`, a host's name or its alias (`constants/cards.yaml`);
+    None for a host or a card index the file does not list."""
+    name = canonical_host(host)
+    for entry in hosts():
+        if entry["name"] == name and 0 <= index < entry["cards"]:
+            return entry["model"][index]
+    return None
 
 
 def canonical_host(raw: str) -> str:
@@ -206,10 +218,343 @@ def append_start(row: dict) -> None:
 
 
 def append_finish(run_id: str, row: dict) -> None:
-    """Append one finish row (8.2) for `run_id` and re-render `RESULTS.md`."""
+    """Append one finish row (8.2) for `run_id` and re-render `RESULTS.md`.
+
+    The row of a card stage's run (`CARD_STAGES`, named by the run id's `<stage>-` prefix)
+    gains the `card_record` of the incarnation it closes, built here and nowhere else, so every
+    finish-row writer records it without carrying the field itself. A record that cannot be
+    built is null, and the row is appended all the same."""
     with lock():
+        if run_id.rpartition("-")[0] in CARD_STAGES:
+            row = dict(row, card_record=_guarded(_card_record, run_id, row.get("status")))
         _append_row(row)
         render()
+
+
+# -- The card record: what one incarnation of a card stage's run did on its cards, the field
+# `append_finish` adds to that run's finish row. It reads the run's open start row, its
+# meta.json, settings.yaml, heartbeat files and piece logs, and probes no host. --
+
+# The stages whose finish rows carry a `card_record`: the three that hold cards.
+CARD_STAGES = ("sample", "inject", "train")
+
+# The record's task identity, the fields that decide a run's memory and speed: dotted fields of
+# the run's frozen settings.yaml, by stage, beside `stage` and `debug`. A sample record adds the
+# number of cards per agent server (from its agent service pieces), an inject record each probe
+# service checkpoint's backbone and tuning (`_INJECT_CHECKPOINTS`).
+CARD_TASK_FIELDS = {
+    "sample": ("models.agent",),
+    "inject": ("models.agent",),
+    "train": ("models.probe", "probe.method", "probe.tuning", "probe.lora_r",
+              "train.max_len", "train.events_per_mb", "train.grad_ckpt"),
+}
+# An inject run's two probe-service checkpoints: the name the record gives each, and the entry of
+# the run's settings.yaml `_upstream` that keys the train run it comes from.
+_INJECT_CHECKPOINTS = (("probe_score", "probe_score.train"), ("probe_gen", "probe_gen.train"))
+# The fields of that train run's settings.yaml a checkpoint is named by in the record.
+_CHECKPOINT_FIELDS = (("backbone", "models.probe"), ("tuning", "probe.tuning"))
+
+# The beat unit a stage's speed is counted in: a loop piece's tasks, and a train piece's
+# training steps (its prediction pass beats in a unit of its own and is not counted).
+SPEED_UNIT = {"sample": "task", "inject": "task", "train": "step"}
+
+# A log line that names a memory failure: torch's CUDA allocator, and vLLM's two refusals to
+# start when the card has no room left for its cache.
+MEMORY_FAILURE_PATTERNS = ("CUDA out of memory", "OutOfMemoryError",
+                           "exceeds available Mamba cache blocks",
+                           "No available memory for the cache blocks")
+# How much of a piece log's end the failure is read from, and how long a quoted line may be.
+LOG_TAIL_BYTES = 16 * 1024
+FAILURE_LINE_CHARS = 300
+_TRACEBACK_HEADER = "Traceback (most recent call last)"
+# What vLLM writes before a line of its processes' output, `(EngineCore pid=N) ` and its
+# logger's `ERROR 10-02 20:37:44 [core.py:1330] `: a traceback's frame lines are indented after it.
+_LOG_LINE_PREFIX = re.compile(r"^(?:\([^()]*\) )?(?:[A-Z]+ \d\d-\d\d \d\d:\d\d:\d\d \[[^\]]*\] )?")
+# The three lines vLLM prints into an agent service's log as it loads a model.
+_VLLM_WEIGHTS = re.compile(r"Model loading took ([0-9.]+) GiB memory")
+_VLLM_KV_CACHE = re.compile(r"Available KV cache memory: ([0-9.]+) GiB")
+_VLLM_CONCURRENCY = re.compile(r"Maximum concurrency for [0-9,]+ tokens per request: ([0-9.]+)x")
+# The line the probe service prints once its checkpoints are loaded.
+_PROBE_SERVICE_MEMORY = re.compile(r"probe service memory: ([0-9.]+) GiB reserved after loading")
+_SERVICE_ENDPOINT = re.compile(r"^service_([a-z]+)_\d+\.json$")
+
+
+def _guarded(fn, *args):
+    """`fn(*args)`, or None when it raises: a record field that cannot be read (a log that is
+    gone, a settings file that does not parse) is null, and the finish row is appended."""
+    try:
+        return fn(*args)
+    except Exception:
+        return None
+
+
+def _card_record(run_id: str, status: str | None) -> dict | None:
+    """The `card_record` of the finish row `append_finish` appends for a card stage's run, with
+    status `status`: the incarnation its open start row launched (`launch`, the meta.json
+    launches ordinal), the task identity, one entry per piece that holds cards, and the speed of
+    its work pieces. None when the run has no open start row, because no incarnation ran since
+    its last finish row. The pieces are the run's meta.json entries (`_pieces_of`), the start
+    row's pieces with the launcher's `started` stamp, which the verdicts read."""
+    entry = fold(_read_rows()).get(run_id)
+    if entry is None or entry["start"] is None or entry["finish"] is not None:
+        return None
+    start = entry["start"]
+    run_dir = Path(start["dir"])
+    stage = start.get("stage")
+    pieces = _pieces_of(run_dir, start)
+    verdicts = _guarded(_finish_verdicts, pieces, run_dir, start["t"]) or [None] * len(pieces)
+    return {
+        "launch": _guarded(launch_ordinal, run_dir),
+        "task": _guarded(_card_task, run_dir, stage, pieces),
+        "pieces": [_card_piece(piece, verdict, run_dir, status)
+                   for piece, verdict in zip(pieces, verdicts)
+                   if piece.get("host") and piece.get("gpus")],
+        "speed": _guarded(_card_speed, run_dir, stage, pieces),
+    }
+
+
+def _finish_verdicts(pieces: list[dict], run_dir: Path, launch_t: str) -> list[str | None]:
+    """Each piece's verdict as its run's finish row finds it, by `judge` and `judge_service`.
+
+    A finish row is appended once the incarnation's processes have ended or while they end (a
+    train piece after its last beat, services its walk has torn down, a run `kill` ended), so
+    every session is read as gone and no host is probed while the lock is held: a work piece is
+    `done` on its own finish beat and `dead` or `not started` otherwise, and a service is `done`
+    once every work piece is done and `dead` while work was owed. None for a `cpu` piece."""
+    verdicts: list[str | None] = [None] * len(pieces)
+    for i, piece in enumerate(pieces):
+        if piece.get("kind") in ("loop", "train"):
+            verdicts[i] = judge(_piece_verdict_dict(piece, run_dir, set(), launch_t))[0]
+    work = [v for v in verdicts if v is not None]
+    work_done = bool(work) and all(v == "done" for v in work)
+    for i, piece in enumerate(pieces):
+        if piece.get("kind") == "service":
+            verdicts[i] = judge_service({"kind": "service", "alive": False, "attached": False,
+                                         "port_ok": None, "work_done": work_done,
+                                         "since_launch_s": 0.0})[0]
+    return verdicts
+
+
+def _card_piece(piece: dict, verdict: str | None, run_dir: Path, status: str | None) -> dict:
+    """One card-holding piece's entry in the record: where it ran, the card model and memory,
+    its memory figures, and the failure its log names. Every incarnation appends to the same
+    log (`tee -a`), so the log is read from the entry's `log_offset`, the size the launcher
+    recorded before this incarnation's session started (`jobs/launch.incarnation_origin`); an
+    entry written before that field existed reads from byte 0. The failure is read only for a
+    piece whose verdict is `dead` or in a run whose status is not `ok`, and never for a piece
+    that was `not started`, which wrote nothing in this incarnation."""
+    index = piece.get("index")
+    kind = piece.get("kind")
+    host = piece.get("host")
+    gpus = str(piece.get("gpus"))
+    log = run_dir / "log" / f"{index}.txt"
+    offset = int(piece.get("log_offset") or 0)
+    service = _service_of(piece)
+    out: dict = {"index": index, "kind": kind}
+    if kind == "service":
+        out["service"] = service
+    out["host"] = host
+    out["gpus"] = gpus
+    out["card_model"] = _guarded(_cards_model, host, gpus)
+    out["card_gib"] = _guarded(_cards_gib, host, gpus)
+    if kind == "train":
+        out["peak_gib"] = _guarded(_peak_gib, run_dir, piece)
+    elif service == "agent":
+        out.update(_guarded(_agent_memory, log, offset)
+                   or {"weights_gib": None, "kv_cache_gib": None, "max_concurrency": None})
+    elif service == "probe":
+        out["peak_gib"] = _guarded(_probe_memory, log, offset)
+    failure = None
+    if verdict != "not started" and (status != "ok" or verdict == "dead"):
+        failure = _guarded(_log_failure, log, offset)
+    out["failure"], out["failure_line"] = failure or (None, None)
+    return out
+
+
+def _service_of(piece: dict) -> str | None:
+    """A service piece's kind, `agent` or `probe`, from its `service_<kind>_<replica>.json`
+    endpoint file name; None for any other piece."""
+    match = _SERVICE_ENDPOINT.match(piece.get("endpoint_file") or "")
+    return match.group(1) if match else None
+
+
+def _card_ids(gpus: str) -> list[int]:
+    return [int(token) for token in str(gpus).split(",") if token.strip().isdigit()]
+
+
+def _cards_model(host: str, gpus: str) -> str | None:
+    """The model of a piece's cards: the one model, or the distinct models in card order joined
+    by ` + ` when a piece spans cards of two models; None when a card is not in the file."""
+    models = [card_model(host, i) for i in _card_ids(gpus)]
+    if not models or None in models:
+        return None
+    return " + ".join(dict.fromkeys(models))
+
+
+def _cards_gib(host: str, gpus: str) -> int:
+    """The memory of a piece's card in GiB; on several cards, the smallest of them."""
+    memory = card_memory_gib()[canonical_host(host)]
+    return min(memory[i] for i in _card_ids(gpus))
+
+
+def _peak_gib(run_dir: Path, piece: dict) -> float | None:
+    """A train piece's peak memory: the largest `mem_gib` among its incarnation's beats."""
+    values = [b["mem_gib"] for b in current_beats(run_dir, piece) if b.get("mem_gib") is not None]
+    return max(values) if values else None
+
+
+def _log_lines(log: Path, offset: int):
+    """The lines of a log from byte `offset` on, decoded as UTF-8."""
+    with open(log, "rb") as f:
+        f.seek(offset)
+        for raw in f:
+            yield raw.decode("utf-8", errors="replace")
+
+
+def _agent_memory(log: Path, offset: int) -> dict:
+    """An agent service's memory figures from the three lines vLLM prints as it loads: the
+    weights, the KV cache and the maximum concurrency of the newest load in the log from byte
+    `offset` on, where this incarnation's output starts. A load line clears the other two and
+    the cache lines after it fill them in, so a log read from byte 0 (an entry with no recorded
+    offset) gives the newest incarnation's load. These lines come early, so everything after
+    `offset` is read, not only the tail the failure is read from."""
+    figures = {"weights_gib": None, "kv_cache_gib": None, "max_concurrency": None}
+    for line in _log_lines(log, offset):
+        if "Model loading took" in line:
+            match = _VLLM_WEIGHTS.search(line)
+            if match:
+                figures = {"weights_gib": float(match.group(1)), "kv_cache_gib": None,
+                           "max_concurrency": None}
+        elif "Available KV cache memory" in line:
+            match = _VLLM_KV_CACHE.search(line)
+            if match:
+                figures["kv_cache_gib"] = float(match.group(1))
+        elif "Maximum concurrency" in line:
+            match = _VLLM_CONCURRENCY.search(line)
+            if match:
+                figures["max_concurrency"] = float(match.group(1))
+    return figures
+
+
+def _probe_memory(log: Path, offset: int) -> float | None:
+    """A probe service's memory: the GiB its newest `probe service memory:` line from byte
+    `offset` on reports reserved after loading its checkpoints; None when there is no such
+    line."""
+    value = None
+    for line in _log_lines(log, offset):
+        if "probe service memory" in line:
+            match = _PROBE_SERVICE_MEMORY.search(line)
+            if match:
+                value = float(match.group(1))
+    return value
+
+
+def _log_tail(log: Path, offset: int) -> list[str]:
+    """The lines this incarnation wrote at the end of a log: from byte `offset` on, where its
+    output starts, and no more than the last `LOG_TAIL_BYTES`; the first line is dropped when
+    that limit cut inside it."""
+    with open(log, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        start = max(offset, f.tell() - LOG_TAIL_BYTES)
+        f.seek(start)
+        data = f.read()
+    lines = data.decode("utf-8", errors="replace").splitlines()
+    return lines[1:] if start > offset else lines
+
+
+def _log_failure(log: Path, offset: int) -> tuple[str | None, str | None]:
+    """`(failure, failure_line)` from the tail of a piece's log that this incarnation wrote
+    (`_log_tail`): `memory` with the newest line that matches one of
+    `MEMORY_FAILURE_PATTERNS`; `error` for any other traceback, with the exception line of the
+    newest one, the first line after its header that is not indented once vLLM's line prefix is
+    set aside; `(None, None)` when the tail holds neither. A quoted line is cut to
+    `FAILURE_LINE_CHARS`."""
+    lines = _log_tail(log, offset)
+    for line in reversed(lines):
+        if any(pattern in line for pattern in MEMORY_FAILURE_PATTERNS):
+            return "memory", line.strip()[:FAILURE_LINE_CHARS]
+    headers = [i for i, line in enumerate(lines) if _TRACEBACK_HEADER in line]
+    if not headers:
+        return None, None
+    for line in lines[headers[-1] + 1:]:
+        body = line[_LOG_LINE_PREFIX.match(line).end():]
+        if body.strip() and not body[0].isspace():
+            return "error", line.strip()[:FAILURE_LINE_CHARS]
+    return "error", None
+
+
+def _dotted(doc: dict | None, dotted: str):
+    """The value at a dotted field of a parsed settings.yaml; None where the path is absent."""
+    value = doc
+    for part in dotted.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value
+
+
+def _card_task(run_dir: Path, stage: str, pieces: list[dict]) -> dict:
+    """The record's task identity, read from the run's frozen settings.yaml (`CARD_TASK_FIELDS`)."""
+    with open(run_dir / "settings.yaml") as f:
+        doc = yaml.safe_load(f)
+    task = {"stage": stage, "debug": bool(doc.get("_debug"))}
+    for dotted in CARD_TASK_FIELDS[stage]:
+        task[dotted] = _dotted(doc, dotted)
+    if stage == "sample":
+        agent = next((p for p in pieces if _service_of(p) == "agent" and p.get("gpus")), None)
+        task["cards_per_agent_server"] = len(_card_ids(agent["gpus"])) if agent else None
+    if stage == "inject":
+        upstream = doc.get("_upstream") or {}
+        for name, upstream_name in _INJECT_CHECKPOINTS:
+            source = _guarded(_train_settings, upstream.get(upstream_name))
+            for field_name, dotted in _CHECKPOINT_FIELDS:
+                task[f"{name}.{field_name}"] = _dotted(source, dotted)
+    return task
+
+
+def _train_settings(key: str | None) -> dict | None:
+    """The frozen settings.yaml of the train run keyed `key`: the one of the two roots (the
+    outputs root and its debug subdirectory) whose settings.yaml records this very key."""
+    if key is None:
+        return None
+    for debug in (False, True):
+        path = where("train", key, debug=debug) / "settings.yaml"
+        if path.exists():
+            with open(path) as f:
+                doc = yaml.safe_load(f) or {}
+            if doc.get("_key") == key:
+                return doc
+    return None
+
+
+def _card_speed(run_dir: Path, stage: str, pieces: list[dict]) -> dict | None:
+    """The run's speed over its work pieces (`loop`, `train`) in this incarnation: each piece's
+    `(last.done - first.done) / (last.ts - first.ts)` over its counting beats in the stage's
+    `SPEED_UNIT`, summed over the pieces and given per hour, with the beats moved (`done`) and
+    the longest piece's span (`span_s`). None while no piece has two such beats."""
+    unit = SPEED_UNIT[stage]
+    done, span_s, per_s = 0, 0.0, 0.0
+    counted = False
+    for piece in pieces:
+        if piece.get("kind") not in ("loop", "train"):
+            continue
+        beats = [b for b in current_beats(run_dir, piece)
+                 if not b.get("phase") and b.get("unit") == unit]
+        if len(beats) < 2:
+            continue
+        first, last = beats[0], beats[-1]
+        dt = last["ts"] - first["ts"]
+        if dt <= 0:
+            continue
+        moved = last["done"] - first["done"]
+        done += moved
+        span_s = max(span_s, dt)
+        per_s += moved / dt
+        counted = True
+    if not counted:
+        return None
+    return {"unit": unit, "done": done, "span_s": round(span_s, 1),
+            "per_hour": round(per_s * 3600, 1)}
 
 
 def _default_meta() -> dict:
