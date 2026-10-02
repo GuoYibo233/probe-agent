@@ -1,5 +1,6 @@
-"""Eight processes appending to jobs/runs.jsonl at once all land, and every line parses; and the
-piece verdicts of 8.5 read a finished run as done and a run that lost a piece as dead."""
+"""Eight processes appending to jobs/runs.jsonl at once all land, and every line parses; the
+piece verdicts of 8.5 read a finished run as done and a run that lost a piece as dead; and the
+finish row of a card stage's run carries the card record of the incarnation it closes."""
 # venv: probe
 from __future__ import annotations
 
@@ -13,6 +14,8 @@ import time
 import unittest
 from datetime import datetime
 from pathlib import Path
+
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -223,6 +226,289 @@ class PieceVerdictTest(unittest.TestCase):
         _write_beats(self.run_dir, 0, [{"done": 0, "total": 2},
                                        {"done": 2, "total": 2, "status": "done"}], self.now_ts - 5)
         self.assertEqual(self._verdicts(pieces, set()), [("done", False), ("done", False)])
+
+
+_FIXTURE_CARDS = """\
+hosts:
+  - name: tokyo105
+    alias: shiga
+    cards:
+      - {model: NVIDIA RTX A6000, memory_gib: 47}
+  - name: tokyo108
+    alias: saitama
+    cards:
+      - {model: NVIDIA H100 NVL, memory_gib: 93}
+      - {model: NVIDIA H100 NVL, memory_gib: 93}
+      - {model: NVIDIA H100 NVL, memory_gib: 93}
+      - {model: NVIDIA H200 NVL, memory_gib: 140}
+      - {model: NVIDIA H200 NVL, memory_gib: 140}
+      - {model: NVIDIA H200 NVL, memory_gib: 140}
+"""
+
+_LAUNCHED_AT = "2026-10-02 20:49"
+
+# One vLLM statistics line, repeated until an agent service's log is longer than the tail the
+# failure is read from, so the memory lines near its start lie outside that tail.
+_VLLM_STATS = ("(APIServer pid=7) INFO 10-02 21:00:00 [loggers.py:310] Engine 000: Avg prompt "
+               "throughput: 22.2 tokens/s, Avg generation throughput: 191.8 tokens/s, Running: 1 "
+               "reqs, Waiting: 0 reqs, GPU KV cache usage: 1.1%, Prefix cache hit rate: 94.5%\n")
+
+_OOM_LINE = ("torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.00 GiB. GPU 0 has a "
+             "total capacity of 93.00 GiB of which 1.10 GiB is free. Including non-PyTorch memory, "
+             "this process has 91.89 GiB memory in use. Of the allocated memory 88.10 GiB is "
+             "allocated by PyTorch, and 2.31 GiB is reserved by PyTorch but unallocated. If "
+             "reserved but unallocated memory is large try setting "
+             "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.")
+
+
+class CardRecordTest(unittest.TestCase):
+    """`append_finish` adds a `card_record` to the finish row of a sample, inject or train run.
+    Every case runs in a temporary tree holding a copy of jobs/registry.py, its own runs.jsonl,
+    a fixture constants/cards.yaml and a constants/path_outputs.yaml whose root is under the
+    temporary directory, so no case touches the real ledger or NFS."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tree = Path(self._tmp.name)
+        (self.tree / "jobs").mkdir()
+        (self.tree / "constants").mkdir()
+        shutil.copy(REPO_ROOT / "jobs" / "registry.py", self.tree / "jobs" / "registry.py")
+        (self.tree / "jobs" / "runs.jsonl").write_text("")
+        (self.tree / "constants" / "cards.yaml").write_text(_FIXTURE_CARDS)
+        self.out = self.tree / "out"
+        (self.tree / "constants" / "path_outputs.yaml").write_text(
+            f"root: {self.out}\ndebug_subdir: debug\nlogin_host: saitama\n")
+        spec = importlib.util.spec_from_file_location(
+            "registry_card_record_under_test", self.tree / "jobs" / "registry.py")
+        self.registry = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.registry)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run_dir(self, stage: str, key: str, debug: bool = False) -> Path:
+        run_dir = self.out / ("debug" if debug else "") / stage / key
+        (run_dir / "log").mkdir(parents=True)
+        return run_dir
+
+    def _start(self, stage: str, key: str, run_dir: Path, pieces: list[dict], debug: bool = False,
+               launches: int = 2) -> str:
+        """Append the run's start row and write its meta.json: the pieces with the launcher's
+        `started` stamp, and `launches` launch entries (the incarnation's ordinal)."""
+        run_id = f"{stage}-{key}"
+        self.registry.append_start({
+            "ev": "start", "t": _LAUNCHED_AT, "run_id": run_id, "stage": stage, "key": key,
+            "dir": str(run_dir), "workflow": "train_probe", "setting": "fixture",
+            "debug": debug, "pieces": pieces, "status": "launching"})
+        self.registry.write_meta(run_dir, stage=stage, key=key,
+                                 pieces=[dict(p, started=_LAUNCHED_AT) for p in pieces],
+                                 launches=[{"t": _LAUNCHED_AT}] * launches)
+        return run_id
+
+    def _write_settings(self, run_dir: Path, doc: dict) -> None:
+        (run_dir / "settings.yaml").write_text(yaml.safe_dump(doc))
+
+    def _write_beats(self, run_dir: Path, piece: int, launch: int, beats: list[dict]) -> None:
+        hb_dir = run_dir / "heartbeat"
+        hb_dir.mkdir(exist_ok=True)
+        with open(hb_dir / f"{piece}-{launch}.jsonl", "w") as f:
+            for beat in beats:
+                f.write(json.dumps(beat) + "\n")
+
+    def _finish(self, run_id: str, status: str) -> dict:
+        self.registry.append_finish(run_id, {
+            "ev": "finish", "t": "2026-10-02 22:00", "run_id": run_id, "status": status,
+            "counts": {}, "metrics": {}, "report": None, "elapsed_s": 60.0})
+        rows = (self.tree / "jobs" / "runs.jsonl").read_text().strip().splitlines()
+        return json.loads(rows[-1])
+
+    def test_train_piece_dead_of_memory(self):
+        key = "a1a1a1a1a1a1"
+        run_dir = self._run_dir("train", key)
+        self._write_settings(run_dir, {
+            "_stage": "train", "_key": key, "_debug": False,
+            "models": {"probe": "qwen3_4b"},
+            "probe": {"method": "ctool", "tuning": "lora", "lora_r": 16},
+            "train": {"max_len": 8192, "events_per_mb": 4, "grad_ckpt": True, "lr": 1.0e-5}})
+        piece = {"index": 0, "kind": "train", "host": "tokyo108", "gpus": "0",
+                 "session": f"train-{key}-0", "log": str(run_dir / "log" / "0.txt"),
+                 "endpoint_file": None, "beat_launch": 1}
+        run_id = self._start("train", key, run_dir, [piece])
+        # The earlier incarnation's beats: never read, though its memory is the largest.
+        self._write_beats(run_dir, 0, 0, [
+            {"done": 0, "total": 10, "unit": "step", "ts": 100.0, "mem_gib": 80.0},
+            {"done": 6, "total": 10, "unit": "step", "ts": 900.0, "mem_gib": 90.0}])
+        # This incarnation trained 8 steps in 200 s, touched the heartbeat in its validation
+        # pass, started its prediction pass and died there of memory.
+        self._write_beats(run_dir, 0, 1, [
+            {"done": 0, "total": 8, "unit": "step", "ts": 1000.0, "mem_gib": 10.5},
+            {"done": 4, "total": 8, "unit": "step", "ts": 1100.0, "mem_gib": 61.2},
+            {"done": 8, "total": 8, "unit": "step", "ts": 1200.0, "mem_gib": 60.0},
+            {"done": 8, "total": 8, "unit": "step", "ts": 1250.0, "mem_gib": 62.5,
+             "phase": "validate"},
+            {"done": 0, "total": 2, "unit": "prediction split", "ts": 1300.0, "mem_gib": 61.0},
+            {"done": 1, "total": 2, "unit": "prediction split", "ts": 1400.0, "mem_gib": 61.4}])
+        (run_dir / "log" / "0.txt").write_text(
+            "step 8 loss 0.31\n"
+            "Traceback (most recent call last):\n"
+            '  File "/repo/train/utils/trainer.py", line 582, in run\n'
+            "    pred_rows.extend(method.predict(probe, split_df, probe.tokenizer, cfg, hb))\n"
+            "                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
+            + _OOM_LINE + "\n")
+        row = self._finish(run_id, "launch_failed")
+        self.assertEqual(row["status"], "launch_failed")
+        self.assertEqual(row["card_record"], {
+            "launch": 2,
+            "task": {"stage": "train", "debug": False, "models.probe": "qwen3_4b",
+                     "probe.method": "ctool", "probe.tuning": "lora", "probe.lora_r": 16,
+                     "train.max_len": 8192, "train.events_per_mb": 4, "train.grad_ckpt": True},
+            "pieces": [{"index": 0, "kind": "train", "host": "tokyo108", "gpus": "0",
+                        "card_model": "NVIDIA H100 NVL", "card_gib": 93, "peak_gib": 62.5,
+                        "failure": "memory", "failure_line": _OOM_LINE[:300]}],
+            "speed": {"unit": "step", "done": 8, "span_s": 200.0, "per_hour": 144.0},
+        })
+        self.assertEqual(len(row["card_record"]["pieces"][0]["failure_line"]), 300)
+
+    def test_agent_service_memory_lines_and_its_log_tail(self):
+        key = "b2b2b2b2b2b2"
+        run_dir = self._run_dir("sample", key, debug=True)
+        self._write_settings(run_dir, {
+            "_stage": "sample", "_key": key, "_debug": True,
+            "models": {"agent": "qwen3pt8_27b", "probe": "qwen3_0pt6b"},
+            "sample": {"max_steps": 6, "pieces": 2}})
+        pieces = [
+            {"index": 0, "kind": "loop", "host": "saitama", "gpus": "", "session": f"sample-{key}-0",
+             "endpoint_file": None, "beat_launch": 0},
+            {"index": 1, "kind": "loop", "host": "saitama", "gpus": "", "session": f"sample-{key}-1",
+             "endpoint_file": None, "beat_launch": 0},
+            {"index": 2, "kind": "service", "host": "tokyo108", "gpus": "5",
+             "session": f"sample-{key}-2", "endpoint_file": "service_agent_0.json"},
+            # A render-only probe service holds no card, so the record has no entry for it.
+            {"index": 3, "kind": "service", "host": "saitama", "gpus": "",
+             "session": f"sample-{key}-3", "endpoint_file": "service_probe_0.json"},
+        ]
+        run_id = self._start("sample", key, run_dir, pieces, debug=True)
+        self._write_beats(run_dir, 0, 0, [
+            {"done": 0, "total": 9, "unit": "task", "ts": 5000.0},
+            {"done": 3, "total": 9, "unit": "task", "ts": 5060.0},
+            {"done": 9, "total": 9, "unit": "task", "ts": 5173.0}])
+        self._write_beats(run_dir, 1, 0, [
+            {"done": 0, "total": 3, "unit": "task", "ts": 5000.0},
+            {"done": 3, "total": 3, "unit": "task", "ts": 5100.0}])
+        # The log the service's two incarnations appended to: the first loaded a model and ran
+        # out of memory; the second loaded it again, served long enough for its statistics to
+        # fill more than the 16 KB tail, and was interrupted by the kill.
+        engine = "(EngineCore pid=11) INFO 10-02 20:51:21 "
+        (run_dir / "log" / "2.txt").write_text(
+            engine + "[gpu_model_runner.py:5347] Model loading took 61.43 GiB memory and "
+                     "16.769317 seconds\n"
+            + engine + "[gpu_worker.py:560] Available KV cache memory: 63.43 GiB\n"
+            + engine + "[kv_cache_utils.py:2178] Maximum concurrency for 131,072 tokens per "
+                       "request: 12.52x\n"
+            + "(EngineCore pid=11) " + _OOM_LINE + "\n"
+            + engine + "[gpu_model_runner.py:5347] Model loading took 50.22 GiB memory and "
+                       "13.758207 seconds\n"
+            + engine + "[gpu_worker.py:560] Available KV cache memory: 73.63 GiB\n"
+            + engine + "[kv_cache_utils.py:2178] Maximum concurrency for 131,072 tokens per "
+                       "request: 8.99x\n"
+            + _VLLM_STATS * 120
+            + "(APIServer pid=7) Traceback (most recent call last):\n"
+            + '(APIServer pid=7)   File "/venv/vllm/entrypoints/openai/api_server.py", line 10, '
+              "in run_server\n"
+            + "(APIServer pid=7)     await serve()\n"
+            + "(APIServer pid=7) KeyboardInterrupt\n"
+            + _VLLM_STATS)
+        self.assertGreater((run_dir / "log" / "2.txt").stat().st_size, 16 * 1024 + 1000)
+        row = self._finish(run_id, "killed")
+        self.assertEqual(row["card_record"], {
+            "launch": 2,
+            "task": {"stage": "sample", "debug": True, "models.agent": "qwen3pt8_27b",
+                     "cards_per_agent_server": 1},
+            "pieces": [{"index": 2, "kind": "service", "service": "agent", "host": "tokyo108",
+                        "gpus": "5", "card_model": "NVIDIA H200 NVL", "card_gib": 140,
+                        "weights_gib": 50.22, "kv_cache_gib": 73.63, "max_concurrency": 8.99,
+                        "failure": "error", "failure_line": "(APIServer pid=7) KeyboardInterrupt"}],
+            # Summed over the two loop pieces: 9 tasks in 173 s and 3 tasks in 100 s.
+            "speed": {"unit": "task", "done": 12, "span_s": 173.0,
+                      "per_hour": round((9 / 173 + 3 / 100) * 3600, 1)},
+        })
+
+    def test_inject_checkpoints_and_the_probe_service_of_a_finished_run(self):
+        key, score_key, gen_key = "c3c3c3c3c3c3", "d4d4d4d4d4d4", "e5e5e5e5e5e5"
+        score_dir = self.out / "train" / score_key
+        gen_dir = self.out / "debug" / "train" / gen_key
+        for train_dir, train_key, backbone, tuning in ((score_dir, score_key, "qwen3_0pt6b", "full"),
+                                                        (gen_dir, gen_key, "qwen3_1pt7b", "lora")):
+            train_dir.mkdir(parents=True)
+            self._write_settings(train_dir, {"_stage": "train", "_key": train_key,
+                                             "models": {"probe": backbone},
+                                             "probe": {"tuning": tuning}})
+        run_dir = self._run_dir("inject", key)
+        self._write_settings(run_dir, {
+            "_stage": "inject", "_key": key, "_debug": False,
+            "_upstream": {"probe_score.train": score_key, "probe_score.eval": "f6f6f6f6f6f6",
+                          "probe_gen.train": gen_key},
+            "models": {"agent": "gpt_oss_120b", "probe": None}})
+        pieces = [
+            {"index": 0, "kind": "loop", "host": "saitama", "gpus": "", "session": f"inject-{key}-0",
+             "endpoint_file": None, "beat_launch": 0},
+            {"index": 1, "kind": "service", "host": "tokyo108", "gpus": "3,4",
+             "session": f"inject-{key}-1", "endpoint_file": "service_agent_0.json"},
+            {"index": 2, "kind": "service", "host": "tokyo108", "gpus": "1",
+             "session": f"inject-{key}-2", "endpoint_file": "service_probe_0.json"},
+        ]
+        run_id = self._start("inject", key, run_dir, pieces, launches=1)
+        self._write_beats(run_dir, 0, 0, [
+            {"done": 0, "total": 2, "unit": "task", "ts": 0.0},
+            {"done": 2, "total": 2, "unit": "task", "ts": 3600.0},
+            {"done": 2, "total": 2, "unit": "task", "ts": 3601.0, "status": "done"}])
+        # The service ended with its run's work: the traceback its teardown printed is not read.
+        (run_dir / "log" / "2.txt").write_text(
+            "probe service memory: 3.42 GiB reserved after loading\n"
+            "Traceback (most recent call last):\n"
+            "KeyboardInterrupt\n")
+        row = self._finish(run_id, "ok")
+        self.assertEqual(row["card_record"], {
+            "launch": 1,
+            "task": {"stage": "inject", "debug": False, "models.agent": "gpt_oss_120b",
+                     "probe_score.backbone": "qwen3_0pt6b", "probe_score.tuning": "full",
+                     "probe_gen.backbone": "qwen3_1pt7b", "probe_gen.tuning": "lora"},
+            # The agent service's log is gone: its figures are null.
+            "pieces": [{"index": 1, "kind": "service", "service": "agent", "host": "tokyo108",
+                        "gpus": "3,4", "card_model": "NVIDIA H200 NVL", "card_gib": 140,
+                        "weights_gib": None, "kv_cache_gib": None, "max_concurrency": None,
+                        "failure": None, "failure_line": None},
+                       {"index": 2, "kind": "service", "service": "probe", "host": "tokyo108",
+                        "gpus": "1", "card_model": "NVIDIA H100 NVL", "card_gib": 93,
+                        "peak_gib": 3.42, "failure": None, "failure_line": None}],
+            "speed": {"unit": "task", "done": 2, "span_s": 3601.0,
+                      "per_hour": round(2 / 3601 * 3600, 1)},
+        })
+
+    def test_unreadable_inputs_leave_fields_null_and_the_row_lands(self):
+        key = "f7f7f7f7f7f7"
+        run_dir = self.out / "train" / key
+        piece = {"index": 0, "kind": "train", "host": "tokyo108", "gpus": "2",
+                 "session": f"train-{key}-0", "endpoint_file": None, "beat_launch": 0}
+        run_id = f"train-{key}"
+        # No run directory at all: no meta.json, settings.yaml, heartbeat or log.
+        self.registry.append_start({
+            "ev": "start", "t": _LAUNCHED_AT, "run_id": run_id, "stage": "train", "key": key,
+            "dir": str(run_dir), "pieces": [piece], "status": "launching"})
+        row = self._finish(run_id, "launch_failed")
+        self.assertEqual(row["card_record"], {
+            "launch": 0, "task": None,
+            "pieces": [{"index": 0, "kind": "train", "host": "tokyo108", "gpus": "2",
+                        "card_model": "NVIDIA H100 NVL", "card_gib": 93, "peak_gib": None,
+                        "failure": None, "failure_line": None}],
+            "speed": None})
+        # A second finish row for the closed run has no incarnation left to record.
+        self.assertIsNone(self._finish(run_id, "killed")["card_record"])
+        # A CPU stage's finish row carries no card record.
+        self.registry.append_start({"ev": "start", "t": _LAUNCHED_AT, "run_id": f"build-{key}",
+                                    "stage": "build", "key": key, "dir": str(run_dir),
+                                    "pieces": [], "status": "launching"})
+        self.assertNotIn("card_record", self._finish(f"build-{key}", "ok"))
 
 
 if __name__ == "__main__":

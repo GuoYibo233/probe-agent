@@ -121,7 +121,7 @@ constants/path_datasets.yaml — per environment: the clone's home, the interpre
   read by: data/environments/__init__.py (the splits block, to resolve a split name), data/environments/appworld.py (home, data root, split files), experimental_settings/schema.py (the splits block, to validate a split value at load), jobs/launch.py (the venv column and the venvs map), run.py (the venvs map)
 
 constants/cards.yaml — the cluster inventory, the one file for card facts: every host's name and alias, and per card index its model and memory in GiB; the source for the code (how many cards a host has, how large each card is) and for people picking cards.
-  read by: jobs/registry.py (the one loader, hosts(): the hosts for tmux and card probes, the card count, card_memory_gib() and canonical_host() for jobs/launch.py and run.py)
+  read by: jobs/registry.py (the one loader, hosts(): the hosts for tmux and card probes, the card count, card_memory_gib() and canonical_host() for jobs/launch.py and run.py, card_model() and card_memory_gib() for the card record)
 
 constants/path_outputs.yaml — the outputs root on NFS, the debug subdirectory under it, and the login_host (tokyo108), the one machine every run.py command runs on.
   read by: experimental_settings/schema.py (run_dir), jobs/registry.py (ls walks the root), jobs/launch.py (the login_host)
@@ -362,10 +362,10 @@ eval/method_table.py — the backbone x method table from the registry; one grou
 
 ### jobs/ — a job is one stage run on cards: the code that starts it and records it, and the record itself
 
-jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the heartbeat (counting beats, and phase-named touches that move no count), the verdicts (a piece whose session the launcher never started reads not started; a piece whose newest beat names a phase is never slowed), ls/where/find/kill/free/sync, RESULTS.md.
+jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the heartbeat (counting beats, and phase-named touches that move no count), the verdicts (a piece whose session the launcher never started reads not started; a piece whose newest beat names a phase is never slowed), the card record a card stage's finish row carries (built in append_finish), ls/where/find/kill/free/sync, RESULTS.md.
   imports: none (repo); [PyYAML]
   used by: run.py, jobs/launch.py, agent/run_tasks.py, data/build_training_dataset.py, train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py, eval/method_table.py
-  reads:   constants/path_outputs.yaml (the root), constants/cards.yaml (the hosts, their card counts and card memory; this file holds its one loader), jobs/runs.jsonl, run directories' meta.json, done.json, heartbeat and service_<kind>_<replica>.json, ssh (to a host's constants/cards.yaml name), tmux, nvidia-smi, a service piece's port (a connect to 127.0.0.1 on the piece's own host, over ssh from any other machine; made only when the piece's verdict reads it: an attached service while its run's work is owed, a service of its own while its session is alive)
+  reads:   constants/path_outputs.yaml (the root), constants/cards.yaml (the hosts, their card counts, card memory and card models; this file holds its one loader), jobs/runs.jsonl, run directories' meta.json, done.json, heartbeat and service_<kind>_<replica>.json, for the card record a card stage's run directory's settings.yaml (the task identity; for inject also the settings.yaml of the two train runs its probe service's checkpoints come from) and its pieces' log/<piece>.txt (the memory lines vLLM and the probe service print, and the failure in the last 16 KB), ssh (to a host's constants/cards.yaml name), tmux, nvidia-smi, a service piece's port (a connect to 127.0.0.1 on the piece's own host, over ssh from any other machine; made only when the piece's verdict reads it: an attached service while its run's work is owed, a service of its own while its session is alive)
   writes:  jobs/runs.jsonl, jobs/RESULTS.md, meta.json, meta.json.corrupt.<timestamp>, heartbeat/<piece>-<launch>.jsonl, done.json
   venv:    any
 
@@ -376,7 +376,7 @@ jobs/launch.py — launch the tmux pieces of a sample, inject or train run and r
   writes:  the start row in jobs/runs.jsonl (a launch's and a refire's), meta.json launch entries, meta.json's split_files, dirty.patch, the piece commands; deletes this launch's own service_<kind>_<replica>.json before its service pieces start
   venv:    probe
 
-jobs/runs.jsonl — one registry row per stage run, appended at start and at finish by registry.py; never edited by hand; in git.
+jobs/runs.jsonl — one registry row per stage run, appended at start and at finish by registry.py; a finish row of a card stage (sample, inject, train) carries the card record of the incarnation it closes (its cards, their model and memory, the memory figures, the failure read from each piece's log, the speed); never edited by hand; in git.
 
 jobs/RESULTS.md — rendered from runs.jsonl by registry.py; never edited by hand.
 
