@@ -1,7 +1,8 @@
 """Eight processes appending to jobs/runs.jsonl at once all land, and every line parses; a beat
 carries `mem_gib` only when it is given; the piece verdicts of 8.5 read a finished run as done
 and a run that lost a piece as dead; the finish row of a card stage's run carries the card
-record of the incarnation it closes; and the ls line prints an open run's remaining time."""
+record of the incarnation it closes; and the ls line prints an open run's remaining time, a
+train run's prediction phase timed from its own beats."""
 # venv: probe
 from __future__ import annotations
 
@@ -681,8 +682,8 @@ def _load_run():
 
 class LsLineTest(unittest.TestCase):
     """8.6's ls line prints an open run's remaining time after its rate: the work left at the
-    recent rate as `left=<h>h<mm>`, a train run's current phase named, and `left=-` for a run
-    with no rate or with a finish row."""
+    recent rate as `left=<h>h<mm>`, a train run's current phase named, the prediction phase's
+    rate read over its own beats, and `left=-` for a run with no rate or with a finish row."""
 
     @classmethod
     def setUpClass(cls):
@@ -717,6 +718,55 @@ class LsLineTest(unittest.TestCase):
         prediction = self.run_py._format_ls_row(self._row(
             stage="train", progress=(1, 4), unit="prediction split", recent_rate=0.001))
         self.assertIn("left=0h50 (prediction)  beat=", prediction)
+
+    def test_prediction_phase_rate_is_read_from_its_own_beats(self):
+        # A train piece's heartbeat file as the trainer writes it: step beats up to 1000/1000, a
+        # validation pass of touches, then prediction beats counting 0..3 of 8 splits a minute
+        # apart. The rate is read over the prediction beats alone, so the line prints the five
+        # splits left at one split a minute; a window reaching back into the step beats (done
+        # 1000 against a prediction count of 3) gives no rate at all.
+        registry = _load_registry()
+        now_ts = time.time()
+        launch_t = datetime.fromtimestamp(now_ts - 3 * 3600).strftime("%Y-%m-%d %H:%M")
+        piece = {"index": 0, "kind": "train", "host": "tokyo108", "session": "t-0",
+                 "started": launch_t}
+        rows = []
+        ts = now_ts - 2 * 3600
+        for i in range(21):
+            rows.append({"done": 50 * i, "total": 1000, "unit": "step", "ts": ts})
+            ts += 10
+        for i in range(5):
+            rows.append({"done": 1000, "total": 1000, "unit": "step", "ts": ts, "phase": "validate"})
+            ts += 3
+        rows.append({"done": 1000, "total": 1000, "unit": "step", "ts": ts})
+        prediction_ts = now_ts - 5 - 3 * 60
+        for i in range(4):
+            rows.append({"done": i, "total": 8, "unit": "prediction split",
+                         "ts": prediction_ts + 60 * i})
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            hb_dir = run_dir / "heartbeat"
+            hb_dir.mkdir()
+
+            def line_after(n_beats: int) -> tuple[dict, str]:
+                with open(hb_dir / "0-0.jsonl", "w") as f:
+                    for row in rows[:n_beats]:
+                        f.write(json.dumps(row) + "\n")
+                pv = registry._judge_pieces([piece], run_dir, {"t-0"}, launch_t)[0][0]
+                return pv, self.run_py._format_ls_row(self._row(
+                    stage="train", progress=(pv["done"], pv["total"]), unit=pv["unit"],
+                    recent_rate=pv["recent_rate"]))
+
+            pv, _line = line_after(21)
+            self.assertAlmostEqual(pv["recent_rate"], 5.0)
+            pv, line = line_after(28)
+            self.assertIsNone(pv["recent_rate"])
+            self.assertIn("left=-  beat=", line)
+            pv, line = line_after(len(rows))
+        self.assertEqual((pv["done"], pv["total"], pv["unit"]), (3, 8, "prediction split"))
+        self.assertAlmostEqual(pv["recent_rate"], 1 / 60)
+        self.assertAlmostEqual(pv["avg_rate"], 1 / 60)
+        self.assertIn("left=0h05 (prediction)  beat=", line)
 
 
 if __name__ == "__main__":
