@@ -751,6 +751,23 @@ class RunsByCardTypeTest(unittest.TestCase):
             '| `train-a1a1a1a1a1a1` "ValueError: exceeds available Mamba cache blocks \\| 12 > 8" |'))
         self.assertIn("| - | - |", row)
 
+    def test_records_without_a_task_keep_debug_and_full_size_apart(self):
+        # Two train runs on H200 whose settings.yaml could not be read at finish time, so their
+        # records carry no task: a debug one and a full-size one. Each is grouped by the stage and
+        # debug of the start row it closes, so they are two rows.
+        self._run("train-a1a1a1a1a1a1", "2026-10-02 10:00", "ok", {
+            "launch": 1, "task": None, "speed": _step_speed(600.0),
+            "pieces": [_train_piece("4", "NVIDIA H200 NVL", 140, 20.0)]}, debug=True)
+        self._run("train-c3c3c3c3c3c3", "2026-10-02 11:00", "ok", {
+            "launch": 1, "task": None, "speed": _step_speed(100.0),
+            "pieces": [_train_piece("5", "NVIDIA H200 NVL", 140, 80.0)]})
+        self.assertEqual(self._render()[4:], [
+            "| train | debug=False | NVIDIA H200 NVL 140 GiB | 1 | 0 | peak 80.0 GiB "
+            "| 100.0 step/h | `train-c3c3c3c3c3c3` | - |",
+            "| train | debug=True | NVIDIA H200 NVL 140 GiB | 1 | 0 | peak 20.0 GiB "
+            "| 600.0 step/h | `train-a1a1a1a1a1a1` | - |",
+        ])
+
     def test_a_ledger_without_card_records(self):
         self._run("build-b2b2b2b2b2b2", "2026-10-02 11:30", "ok", card_record="absent")
         self.assertEqual(self._render(), [

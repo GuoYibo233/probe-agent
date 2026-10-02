@@ -875,19 +875,26 @@ def _card_type_lines(rows: list[dict]) -> list[str]:
     """The "Runs by card type" table, from every finish row that carries a card record (each
     incarnation of a run has its own): one row per (task identity, card model). The identity is
     the record's `task`, `debug` included, so a debug run and a full-size run of the same task
-    are separate rows; a record whose task could not be read is grouped by its run id's stage
-    alone. A run counts in the row of each card model its card-holding pieces ran on. A row
+    are separate rows; a record whose task could not be read is grouped by the `stage` and
+    `debug` of the start row it closes, the run's newest start row above it in the ledger (a
+    record is written only for a run with an open start row, so that row is always there). A
+    run counts in the row of each card model its card-holding pieces ran on. A row
     gives the card's memory, the runs that finished `ok`, the runs a piece of which on that card
     model failed for memory, the memory those pieces used (`_card_type_memory`), the median of
     the runs' speeds, the newest run key, and, when it has a memory failure, the run key and the
     quoted `failure_line` of the newest one. Newest row first, by the ledger's order."""
     groups: dict[tuple[str, str], dict] = {}
+    starts: dict[str, dict] = {}
     for order, row in enumerate(rows):
+        if row.get("ev") == "start":
+            starts[row["run_id"]] = row
         record = row.get("card_record") if row.get("ev") == "finish" else None
         if not record:
             continue
         run_id = row["run_id"]
-        task = record.get("task") or {"stage": run_id.rpartition("-")[0]}
+        start = starts[run_id]
+        task = record.get("task") or {"stage": start.get("stage"),
+                                      "debug": bool(start.get("debug"))}
         identity = json.dumps(task, sort_keys=True, default=str)
         by_model: dict[str, list[dict]] = {}
         for piece in record.get("pieces") or []:
