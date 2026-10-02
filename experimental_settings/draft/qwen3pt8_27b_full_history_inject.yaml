@@ -1,0 +1,57 @@
+# Draft workflow (2026-10-02): live injection with Qwen3.8-27B as the agent model and the two
+# full-history probes trained on its own collection (draft/full_history_qwen). The agent, its
+# generation settings and the probe text fields are inherited from the referenced probe
+# settings. The baseline is that collection's own test split at seed 42: the same agent, the
+# same generation settings and the same 50 steps, on tasks the probes never trained on.
+# The three arms copy the 2026-09-30 full-test design (inject.yaml); the thetas are first
+# values until the classifier's evaluation gives its risk thresholds.
+workflow: [inject, score]
+
+common:
+  data:   {env: appworld, instructions: v2}
+
+inject_2026_10_02_qwen3pt8_27b_full_history_arm_probe_qwen3_0pt6b_full:
+  meta:   {notes: "full test split, probe arm, Qwen3.8-27B agent, full-history 0.6B full-tuning probe pair: 3 formats x 2 thetas"}
+  inject:
+    split: [test]
+    seeds: [42]
+    max_steps: 50
+    arm: probe
+    probe_score: draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full
+    probe_gen: draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_cgen_qwen3_0pt6b_full
+    pieces: 6
+    replicas: 1
+  sweep:
+    inject.theta: [0.6, 0.9]
+    inject.format: [p1_e1, p2_e1, p2_e2]
+  score:  {baseline: draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full}
+
+inject_2026_10_02_qwen3pt8_27b_full_history_arm_probe_nofill_theta_0pt6_qwen3_0pt6b_full:
+  meta:   {notes: "full test split, no-fill arm (cut and resume, nothing spliced), theta 0.6, Qwen3.8-27B agent, full-history 0.6B full-tuning probe pair"}
+  inject:
+    split: [test]
+    seeds: [42]
+    max_steps: 50
+    theta: 0.6
+    arm: probe_nofill
+    format: p1_e1
+    probe_score: draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full
+    probe_gen: draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_cgen_qwen3_0pt6b_full
+    pieces: 6
+    replicas: 1
+  score:  {baseline: draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full}
+
+inject_2026_10_02_qwen3pt8_27b_full_history_arm_no_probe:
+  meta:   {notes: "full test split, no-probe arm with a Qwen3.8-27B agent: all machinery wired, never fires"}
+  inject:
+    split: [test]
+    seeds: [42]
+    max_steps: 50
+    theta: 0.6
+    arm: no_probe
+    format: p1_e1
+    probe_score: draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full
+    probe_gen: draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_cgen_qwen3_0pt6b_full
+    pieces: 6
+    replicas: 1
+  score:  {baseline: draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full}

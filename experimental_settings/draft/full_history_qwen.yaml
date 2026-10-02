@@ -91,3 +91,14 @@ collection_2026_10_02_qwen3pt8_27b_three_rounds_ctool_qwen3_0pt6b_full:
   build:  {hist_rounds: 3, probe_result_cap: 400}
   train:  {lr: 1.0e-5, epochs: 3, max_len: 8192, grad_ckpt: true, save_passes: true}
   eval:   {risk: [0.10, 0.05]}
+
+# The generating probe the inject runs of draft/qwen3pt8_27b_full_history_inject need (2026-10-02):
+# it writes the whole call when the classifier above fires; same collection and build.
+collection_2026_10_02_qwen3pt8_27b_full_history_cgen_qwen3_0pt6b_full:
+  meta:   {notes: "the full-history whole-call generating probe on the Qwen3.8-27B collection; theta is frozen by the full-history classifier setting"}
+  models: {agent: qwen3pt8_27b, probe: qwen3_0pt6b}
+  generation: {temperature: 1.0}
+  probe:  {method: cgen, tuning: full}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
+  eval:   {theta_from: draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full}
