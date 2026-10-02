@@ -1,10 +1,13 @@
-"""Eight processes appending to jobs/runs.jsonl at once all land, and every line parses; the
-piece verdicts of 8.5 read a finished run as done and a run that lost a piece as dead; and the
-finish row of a card stage's run carries the card record of the incarnation it closes."""
+"""Eight processes appending to jobs/runs.jsonl at once all land, and every line parses; a beat
+carries `mem_gib` only when it is given; the piece verdicts of 8.5 read a finished run as done
+and a run that lost a piece as dead; and the finish row of a card stage's run carries the card
+record of the incarnation it closes."""
 # venv: probe
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -98,6 +101,31 @@ def _write_beats(run_dir: Path, piece: int, beats: list[dict], last_ts: float,
     with open(hb_dir / f"{piece}-{launch}.jsonl", "w") as f:
         for i, beat in enumerate(beats):
             f.write(json.dumps({"unit": "task", "ts": first_ts + i, **beat}) + "\n")
+
+
+class HeartbeatLineTest(unittest.TestCase):
+    """8.4's beat line with the optional `mem_gib` a train piece passes: the figure lands in the
+    line when it is given, and a beat without it is the line it was before."""
+
+    def test_beat_carries_mem_gib_only_when_given(self):
+        registry = _load_registry()
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                hb = registry.beat(run_dir, 0)
+                hb.emit(0, 10, "step", mem_gib=61.2)
+                hb.emit(1, 10, "step", loss=0.5)
+                hb.emit(1, 10, "step")
+                hb.finish()
+            lines = (run_dir / "heartbeat" / "0-0.jsonl").read_text().splitlines()
+        rows = [json.loads(line) for line in lines]
+        self.assertEqual(rows[0]["mem_gib"], 61.2)
+        self.assertEqual(set(rows[0]), {"done", "total", "unit", "ts", "mem_gib"})
+        self.assertEqual(set(rows[1]), {"done", "total", "unit", "ts", "loss"})
+        self.assertEqual(set(rows[2]), {"done", "total", "unit", "ts"})
+        self.assertEqual(set(rows[3]), {"done", "total", "unit", "ts", "status"})
+        # The stdout copy of each beat is the same line as the file's.
+        self.assertEqual(out.getvalue().splitlines(), ["@hb " + line for line in lines])
 
 
 class PieceVerdictTest(unittest.TestCase):

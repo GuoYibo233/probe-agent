@@ -680,7 +680,9 @@ class Heartbeat:
         # time.time(); every beat timestamp is the wall clock instead
         # (errata, measured 2026-09-17).
         rec["ts"] = time.clock_gettime(time.CLOCK_REALTIME)
-        for key in ("tok_in", "tok_out", "loss"):
+        # `mem_gib` is the peak card memory a train piece's process has reserved so far, in
+        # GiB (`train/utils/trainer.py` passes it on every beat it emits).
+        for key in ("tok_in", "tok_out", "loss", "mem_gib"):
             if extra.get(key) is not None:
                 rec[key] = extra[key]
         if status is not None:
