@@ -22,3 +22,9 @@ qwen3.5-35b-a3b:
 lfm2.5-350m-base:
   path: /net/tokyo100-10g/data/str01_01/y-guo/models/LFM2.5-350M-Base
   note: own replica, 681M, registered 2026-08-20 for the old tree's cgen cell; no models/table.yaml row and no models/probe_models family module name it, so no setting reaches it until both are added
+qwen3.6-35b-a3b:
+  path: /net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3.6-35B-A3B
+  note: own replica, registered 2026-10-02; MoE (36B total, 3B active, the model class of Qwen3.5-35B-A3B) with a vision tower that --language-model-only leaves unloaded, bf16; agent family qwen3
+qwen3.8-27b:
+  path: /net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3.8-27B
+  note: own replica, registered 2026-10-02; dense 27.8B with a vision tower that --language-model-only leaves unloaded, bf16; its chat template writes a reasoning-effort line into the system message (xhigh when the request names none); agent family qwen3

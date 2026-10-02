@@ -49,3 +49,45 @@ collection_2026_10_01_qwen3pt5_35b_a3b_three_rounds_ctool_qwen3_0pt6b_full:
   build:  {hist_rounds: 3, probe_result_cap: 400}
   train:  {lr: 1.0e-5, epochs: 3, max_len: 8192, grad_ckpt: true, save_passes: true}
   eval:   {risk: [0.10, 0.05]}
+
+# Qwen3.6-35B-A3B (gyb named it on 2026-10-02): the model class of Qwen3.5-35B-A3B, no
+# reasoning tiers; the model card's thinking-mode temperature for general tasks is 1.0
+# (.scratch/qwen-agent/spec.md section 5).
+collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the full-history classification probe on trajectories from Qwen3.6-35B-A3B; temperature 1.0 per the model card, the rest as the gpt-oss collection"}
+  models: {agent: qwen3pt6_35b_a3b, probe: qwen3_0pt6b}
+  generation: {temperature: 1.0}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
+
+collection_2026_10_02_qwen3pt6_35b_a3b_three_rounds_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the three-round control on the same Qwen3.6-35B-A3B collection"}
+  models: {agent: qwen3pt6_35b_a3b, probe: qwen3_0pt6b}
+  generation: {temperature: 1.0}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 3, probe_result_cap: 400}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 8192, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
+
+# Qwen3.8-27B (gyb named it on 2026-10-02): a dense model whose chat template has three
+# reasoning tiers; no tier is named here, so the template's own xhigh applies. The model
+# card's thinking-mode temperature is 1.0.
+collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the full-history classification probe on trajectories from Qwen3.8-27B at the template's own reasoning tier (xhigh); temperature 1.0 per the model card, the rest as the gpt-oss collection"}
+  models: {agent: qwen3pt8_27b, probe: qwen3_0pt6b}
+  generation: {temperature: 1.0}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
+
+collection_2026_10_02_qwen3pt8_27b_three_rounds_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the three-round control on the same Qwen3.8-27B collection"}
+  models: {agent: qwen3pt8_27b, probe: qwen3_0pt6b}
+  generation: {temperature: 1.0}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 3, probe_result_cap: 400}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 8192, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}

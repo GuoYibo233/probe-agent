@@ -42,3 +42,48 @@ qwen3_4b:
   family: qwen
   result: {weights: qwen3-4b-base, dtype: float32}
   serving: {}
+
+
+qwen3pt6_35b_a3b:
+  role: agent
+  family: qwen3
+  result:
+    weights: qwen3.6-35b-a3b
+    dtype: bfloat16
+    quantization: null
+    max_model_len: 131072
+    served_model_name: qwen3.6-35b-a3b
+    env_result: {VLLM_USE_FLASHINFER_SAMPLER: "0"}
+    extra_flags: "--language-model-only"
+  serving:
+    host: tokyo108
+    port: 8106
+    gpu_memory_utilization: 0.92
+    tensor_parallel_size: 1
+    env:
+      LD_LIBRARY_PATH: /home/y-guo/reproduce/new1/envs/cuda-compat-13.0
+      CUDA_DEVICE_ORDER: PCI_BUS_ID
+      VLLM_CACHE_ROOT: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache
+      TRITON_CACHE_DIR: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton
+
+qwen3pt8_27b:
+  role: agent
+  family: qwen3
+  result:
+    weights: qwen3.8-27b
+    dtype: bfloat16
+    quantization: null
+    max_model_len: 131072
+    served_model_name: qwen3.8-27b
+    env_result: {VLLM_USE_FLASHINFER_SAMPLER: "0"}
+    extra_flags: "--language-model-only"
+  serving:
+    host: tokyo108
+    port: 8107
+    gpu_memory_utilization: 0.92
+    tensor_parallel_size: 1
+    env:
+      LD_LIBRARY_PATH: /home/y-guo/reproduce/new1/envs/cuda-compat-13.0
+      CUDA_DEVICE_ORDER: PCI_BUS_ID
+      VLLM_CACHE_ROOT: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache
+      TRITON_CACHE_DIR: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton
