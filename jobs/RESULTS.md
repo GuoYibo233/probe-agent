@@ -3,6 +3,9 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `eval-dc592d5747bd` | 2026-10-02 22:58 | eval | train_probe/ctool_qwen3_0pt6b | `0d4798e` | ok | coverage@0.1=0.0 trig_acc@0.1=0.0 earliness@0.1=0.0 wrong_spec@0.1=0.0 coverage@0.05=0.0 trig_acc@0.05=0.0 earliness@0.05=0.0 wrong_spec@0.05=0.0 | report.md |
+| `train-6a48a0a83391` | 2026-10-02 22:54 | train | train_probe/ctool_qwen3_0pt6b | `0d4798e` | ok | objective=0.5625 val_wacc=0.4375 val_lastcut_acc=0.5 | - |
+| `sample-363859498f89` | 2026-10-02 22:41 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `abe9f97` | launching | - | - |
 | `eval-841ca6060041` | 2026-10-02 22:07 | eval | train_probe/ctool_qwen3_0pt6b | `92917b0` | ok | coverage@0.1=0.875 trig_acc@0.1=0.2857 earliness@0.1=0.9303 wrong_spec@0.1=0.625 coverage@0.05=0.875 trig_acc@0.05=0.2857 earliness@0.05=0.9303 wrong_spec@0.05=0.625 | report.md |
 | `build-c32f7e47ce60` | 2026-10-02 22:05 | build | train_probe/ctool_qwen3_0pt6b | `92917b0` | ok | - | report.md |
 | `train-3e562de5abb9` | 2026-10-02 22:05 | train | train_probe/ctool_qwen3_0pt6b | `92917b0` | ok | objective=0.59375 val_wacc=0.40625 val_lastcut_acc=0.375 | - |
@@ -408,3 +411,11 @@
 | `build-b565f5ab1b94` | 2026-09-20 06:08 | build | train_probe/ctool_qwen3_0pt6b | `30aae15` | ok | - | report.md |
 | `train-22a0980de899` | 2026-09-20 06:08 | train | train_probe/ctool_qwen3_0pt6b | `30aae15` | ok | objective=0.75 val_wacc=0.25 val_lastcut_acc=0.25 | - |
 | `sample-96de225de2b4` | 2026-09-20 05:56 | sample | baseline/gpt_oss_120b_appworld | `be60c4c` | ok | - | - |
+
+## Runs by card type
+
+> One row per task identity and card model, from the card record on every finish row of a sample, inject or train run; a run counts under each card model it held. Newest first.
+
+| stage | task | card | ok | failed for memory | memory | median speed | newest run | newest memory failure |
+|---|---|---|---|---|---|---|---|---|
+| train | debug=True models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=False train.import_from=None | NVIDIA RTX A6000 47 GiB | 2 | 0 | peak 44.11 GiB | 56.2 step/h | `train-6a48a0a83391` | - |
