@@ -838,10 +838,12 @@ def _fmt_metrics(m) -> str:
 # VERSION 3 before its wrap-up walk, so no walk computes its key any more and the row stays
 # `launching`. It holds no card once the launch timeout has passed.
 def render() -> None:
-    """Rewrite `jobs/RESULTS.md` from `jobs/runs.jsonl`: one markdown table,
-    newest run first, one row per `run_id` folded from its newest start and
-    newest finish row (8.2, 8.6). No per-run detail blocks."""
-    folded = fold(_read_rows())
+    """Rewrite `jobs/RESULTS.md` from `jobs/runs.jsonl`: the runs table, newest
+    run first, one row per `run_id` folded from its newest start and newest
+    finish row (8.2, 8.6), with no per-run detail blocks; then the "Runs by card
+    type" table (`_card_type_lines`)."""
+    rows = _read_rows()
+    folded = fold(rows)
     entries = [(rid, e["start"], e["finish"]) for rid, e in folded.items()
                if e["start"] is not None]
     lines = [
@@ -863,7 +865,113 @@ def render() -> None:
                 run_id, start.get("t", "-"), start.get("stage", "-"),
                 start.get("workflow", "-"), start.get("setting", "-"),
                 start.get("commit", "-"), status, numbers, report))
+    lines.extend(_card_type_lines(rows))
     _write_text_atomic(_results_path(), "\n".join(lines) + "\n")
+
+
+# -- The lookup view: RESULTS.md's second table, "Runs by card type", where an agent picking
+# cards reads how the same task went on each card model before. --
+
+
+def _card_type_lines(rows: list[dict]) -> list[str]:
+    """The "Runs by card type" table, from every finish row that carries a card record (each
+    incarnation of a run has its own): one row per (task identity, card model). The identity is
+    the record's `task`, `debug` included, so a debug run and a full-size run of the same task
+    are separate rows; a record whose task could not be read is grouped by the `stage` and
+    `debug` of the start row it closes, the run's newest start row above it in the ledger (a
+    record is written only for a run with an open start row, so that row is always there). A
+    run counts in the row of each card model its card-holding pieces ran on. A row
+    gives the card's memory, the runs that finished `ok`, the runs a piece of which on that card
+    model failed for memory, the memory those pieces used (`_card_type_memory`), the median of
+    the runs' speeds, the newest run key, and, when it has a memory failure, the run key and the
+    quoted `failure_line` of the newest one. Newest row first, by the ledger's order."""
+    groups: dict[tuple[str, str], dict] = {}
+    starts: dict[str, dict] = {}
+    for order, row in enumerate(rows):
+        if row.get("ev") == "start":
+            starts[row["run_id"]] = row
+        record = row.get("card_record") if row.get("ev") == "finish" else None
+        if not record:
+            continue
+        run_id = row["run_id"]
+        start = starts[run_id]
+        task = record.get("task") or {"stage": start.get("stage"),
+                                      "debug": bool(start.get("debug"))}
+        identity = json.dumps(task, sort_keys=True, default=str)
+        by_model: dict[str, list[dict]] = {}
+        for piece in record.get("pieces") or []:
+            by_model.setdefault(piece.get("card_model") or "-", []).append(piece)
+        speed = record.get("speed") or {}
+        for model, pieces in by_model.items():
+            group = groups.setdefault((identity, model), {
+                "task": task, "model": model, "card_gib": set(), "ok": 0, "memory": 0,
+                "pieces": [], "per_hour": [], "unit": None, "newest": None,
+                "newest_memory_failure": None})
+            group["card_gib"].update(p["card_gib"] for p in pieces if p.get("card_gib") is not None)
+            group["pieces"].extend(pieces)
+            if row.get("status") == "ok":
+                group["ok"] += 1
+            failed = next((p for p in pieces if p.get("failure") == "memory"), None)
+            if failed is not None:
+                group["memory"] += 1
+                group["newest_memory_failure"] = (run_id, failed.get("failure_line"))
+            if speed.get("per_hour") is not None:
+                group["per_hour"].append(speed["per_hour"])
+                group["unit"] = speed.get("unit")
+            group["newest"] = (order, run_id)
+    lines = ["", "## Runs by card type", "",
+             "> One row per task identity and card model, from the card record on every finish "
+             "row of a sample, inject or train run; a run counts under each card model it held. "
+             "Newest first.", ""]
+    if not groups:
+        lines.append("No card records yet.")
+        return lines
+    lines.append("| stage | task | card | ok | failed for memory | memory | median speed "
+                 "| newest run | newest memory failure |")
+    lines.append("|---|---|---|---|---|---|---|---|---|")
+    for group in sorted(groups.values(), key=lambda g: g["newest"][0], reverse=True):
+        task = group["task"]
+        fields = " ".join(f"{k}={v}" for k, v in task.items() if k != "stage") or "-"
+        card_gib = "/".join(str(gib) for gib in sorted(group["card_gib"]))
+        card = f"{group['model']} {card_gib} GiB" if card_gib else group["model"]
+        speed = (f"{round(median(group['per_hour']), 1)} {group['unit']}/h"
+                 if group["per_hour"] else "-")
+        failure = "-"
+        if group["newest_memory_failure"] is not None:
+            failed_run, failure_line = group["newest_memory_failure"]
+            failure = f"`{failed_run}`"
+            if failure_line is not None:
+                quoted = failure_line.replace("|", "\\|")
+                failure += f' "{quoted}"'
+        lines.append("| {} | {} | {} | {} | {} | {} | {} | `{}` | {} |".format(
+            task.get("stage", "-"), fields, card, group["ok"], group["memory"],
+            _card_type_memory(group["pieces"]), speed, group["newest"][1], failure))
+    return lines
+
+
+def _card_type_memory(pieces: list[dict]) -> str:
+    """A "Runs by card type" row's memory, over the pieces of its runs on its card model: the
+    largest `peak_gib` of the train pieces and of the probe-service pieces, and the agent-service
+    load with the largest weights + KV cache, with that load's maximum concurrency; `-` when no
+    piece measured any."""
+    parts = []
+    train = [p["peak_gib"] for p in pieces
+             if p.get("kind") == "train" and p.get("peak_gib") is not None]
+    if train:
+        parts.append(f"peak {round(max(train), 2)} GiB")
+    probe = [p["peak_gib"] for p in pieces
+             if p.get("service") == "probe" and p.get("peak_gib") is not None]
+    if probe:
+        parts.append(f"probe service peak {round(max(probe), 2)} GiB")
+    loads = [p for p in pieces if p.get("service") == "agent" and p.get("weights_gib") is not None]
+    if loads:
+        load = max(loads, key=lambda p: p["weights_gib"] + (p.get("kv_cache_gib") or 0))
+        kv_cache = load.get("kv_cache_gib")
+        concurrency = load.get("max_concurrency")
+        parts.append("weights {} + KV cache {} GiB, concurrency {}x".format(
+            load["weights_gib"], "-" if kv_cache is None else kv_cache,
+            "-" if concurrency is None else concurrency))
+    return "; ".join(parts) or "-"
 
 
 def open_runs() -> list[dict]:
