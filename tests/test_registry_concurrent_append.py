@@ -1,7 +1,7 @@
 """Eight processes appending to jobs/runs.jsonl at once all land, and every line parses; a beat
 carries `mem_gib` only when it is given; the piece verdicts of 8.5 read a finished run as done
-and a run that lost a piece as dead; and the finish row of a card stage's run carries the card
-record of the incarnation it closes."""
+and a run that lost a piece as dead; the finish row of a card stage's run carries the card
+record of the incarnation it closes; and the ls line prints an open run's remaining time."""
 # venv: probe
 from __future__ import annotations
 
@@ -666,6 +666,57 @@ class CardRecordTest(unittest.TestCase):
              "failure": "error",
              "failure_line": "(APIServer pid=21) RuntimeError: Engine core initialization "
                              "failed. See root cause above. Failed core proc(s): {}"}])
+
+
+def _load_run():
+    """The real run.py under a name of its own, with the repo root on sys.path for the modules
+    it imports. The ls line's formatting reads only the row it is given, so this writes nothing."""
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    spec = importlib.util.spec_from_file_location("run_under_test", REPO_ROOT / "run.py")
+    run = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(run)
+    return run
+
+
+class LsLineTest(unittest.TestCase):
+    """8.6's ls line prints an open run's remaining time after its rate: the work left at the
+    recent rate as `left=<h>h<mm>`, a train run's current phase named, and `left=-` for a run
+    with no rate or with a finish row."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.run_py = _load_run()
+
+    def _row(self, **fields) -> dict:
+        row = {"run_id": "sample-0123456789ab", "stage": "sample", "workflow": "baseline",
+               "setting": "gpt_oss_120b_appworld", "status": "launching",
+               "progress": (300, 1575), "unit": "task", "recent_rate": 0.03,
+               "beat_age_s": 12.0, "flags": {}, "pieces": []}
+        row.update(fields)
+        return row
+
+    def test_open_run_prints_its_remaining_time_after_the_rate(self):
+        # 1275 tasks at 0.03 tasks/s are 42500 s, 11 h 48 min.
+        line = self.run_py._format_ls_row(self._row())
+        self.assertIn("rate=0.03/s  left=11h48  beat=12s", line)
+
+    def test_no_rate_prints_a_dash(self):
+        line = self.run_py._format_ls_row(self._row(recent_rate=None))
+        self.assertIn("rate=-  left=-  beat=", line)
+
+    def test_finished_run_prints_a_dash(self):
+        line = self.run_py._format_ls_row(self._row(status="ok"))
+        self.assertIn("left=-  beat=", line)
+
+    def test_train_run_names_its_phase(self):
+        # 750 steps at 0.5 steps/s are 25 min; 3 prediction splits at 0.001 splits/s are 50 min.
+        training = self.run_py._format_ls_row(self._row(
+            stage="train", progress=(250, 1000), unit="step", recent_rate=0.5))
+        self.assertIn("left=0h25 (training)  beat=", training)
+        prediction = self.run_py._format_ls_row(self._row(
+            stage="train", progress=(1, 4), unit="prediction split", recent_rate=0.001))
+        self.assertIn("left=0h50 (prediction)  beat=", prediction)
 
 
 if __name__ == "__main__":
