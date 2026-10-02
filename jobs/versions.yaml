@@ -185,3 +185,10 @@
   why: 'Ticket 02 of card-record-and-remaining-time: the trainer''s counting beats carry mem_gib and the
     prediction beats count in ''prediction split'', and the probe service prints its reserved memory to
     its log; only the heartbeat lines and the log change, no stage''s output.'
+- stage: train
+  era: 2
+  from: abe9f972ba3b24e310540e7d64c09609144af0aa
+  same: 496a996bb848319d7af15899f477f326f7d09866
+  date: 2026-10-02
+  why: 'Final review of card-record-and-remaining-time: the trainer''s load beat reports the step a resumed
+    incarnation starts at instead of 0; only a heartbeat line changes, not the train stage''s output.'
