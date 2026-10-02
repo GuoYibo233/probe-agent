@@ -1,6 +1,7 @@
 """Eight processes appending to jobs/runs.jsonl at once all land, and every line parses; the
-piece verdicts of 8.5 read a finished run as done and a run that lost a piece as dead; and the
-finish row of a card stage's run carries the card record of the incarnation it closes."""
+piece verdicts of 8.5 read a finished run as done and a run that lost a piece as dead; the
+finish row of a card stage's run carries the card record of the incarnation it closes; and
+RESULTS.md's "Runs by card type" table groups those records by task identity and card model."""
 # venv: probe
 from __future__ import annotations
 
@@ -638,6 +639,126 @@ class CardRecordTest(unittest.TestCase):
              "failure": "error",
              "failure_line": "(APIServer pid=21) RuntimeError: Engine core initialization "
                              "failed. See root cause above. Failed core proc(s): {}"}])
+
+
+_TRAIN_TASK = {"stage": "train", "debug": False, "models.probe": "qwen3_4b",
+               "probe.method": "ctool", "probe.tuning": "lora", "probe.lora_r": 16,
+               "train.max_len": 8192, "train.events_per_mb": 4, "train.grad_ckpt": True}
+_TRAIN_TASK_FIELDS = ("models.probe=qwen3_4b probe.method=ctool probe.tuning=lora probe.lora_r=16 "
+                      "train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=True")
+
+
+def _train_piece(gpus: str, model: str, gib: int, peak: float, failure=None, line=None) -> dict:
+    return {"index": 0, "kind": "train", "host": "tokyo108", "gpus": gpus, "card_model": model,
+            "card_gib": gib, "peak_gib": peak, "failure": failure, "failure_line": line}
+
+
+def _step_speed(per_hour: float) -> dict:
+    return {"unit": "step", "done": 8, "span_s": 200.0, "per_hour": per_hour}
+
+
+class RunsByCardTypeTest(unittest.TestCase):
+    """`render()` writes the "Runs by card type" table from the card records of the finish rows,
+    in a temporary tree holding a copy of jobs/registry.py and its own runs.jsonl of fixture
+    rows, so no case touches the real ledger."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tree = Path(self._tmp.name)
+        (self.tree / "jobs").mkdir()
+        shutil.copy(REPO_ROOT / "jobs" / "registry.py", self.tree / "jobs" / "registry.py")
+        spec = importlib.util.spec_from_file_location(
+            "registry_card_type_table_under_test", self.tree / "jobs" / "registry.py")
+        self.registry = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.registry)
+        self.rows: list[dict] = []
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run(self, run_id: str, t: str, status: str, card_record=None, debug: bool = False) -> None:
+        """One incarnation of a run: its start row, then its finish row, carrying `card_record`
+        when one is given."""
+        self.rows.append({"ev": "start", "t": t, "run_id": run_id,
+                          "stage": run_id.rpartition("-")[0], "key": run_id.rpartition("-")[2],
+                          "dir": f"/out/{run_id}", "workflow": "train_probe", "setting": "fixture",
+                          "debug": debug, "commit": "deadbee", "pieces": [],
+                          "status": "launching"})
+        finish = {"ev": "finish", "t": t, "run_id": run_id, "status": status, "counts": {},
+                  "metrics": {}, "report": None, "elapsed_s": 60.0}
+        if card_record != "absent":
+            finish["card_record"] = card_record
+        self.rows.append(finish)
+
+    def _render(self) -> list[str]:
+        (self.tree / "jobs" / "runs.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in self.rows))
+        self.registry.render()
+        text = (self.tree / "jobs" / "RESULTS.md").read_text()
+        return text.split("## Runs by card type\n", 1)[1].strip().splitlines()
+
+    def test_one_row_per_task_and_card_model_newest_first(self):
+        # A full-size train run dies of memory on an H100 card and is relaunched on an H200 card,
+        # where it finishes; a second run of the same task finishes on an H200 card; a debug run
+        # of the same task finishes on an H200 card; a sample run's agent service holds an H200
+        # card. A CPU stage's finish row and a finish row whose record is null add no row.
+        self._run("train-a1a1a1a1a1a1", "2026-10-02 10:00", "launch_failed", {
+            "launch": 1, "task": _TRAIN_TASK, "speed": None,
+            "pieces": [_train_piece("0", "NVIDIA H100 NVL", 93, 92.04, "memory", _OOM_LINE[:300])]})
+        self._run("train-a1a1a1a1a1a1", "2026-10-02 11:00", "ok", {
+            "launch": 2, "task": _TRAIN_TASK, "speed": _step_speed(144.0),
+            "pieces": [_train_piece("4", "NVIDIA H200 NVL", 140, 61.2)]})
+        self._run("build-b2b2b2b2b2b2", "2026-10-02 11:30", "ok", card_record="absent")
+        self._run("train-c3c3c3c3c3c3", "2026-10-02 12:00", "ok", {
+            "launch": 1, "task": _TRAIN_TASK, "speed": _step_speed(150.0),
+            "pieces": [_train_piece("3", "NVIDIA H200 NVL", 140, 70.0)]})
+        self._run("train-d4d4d4d4d4d4", "2026-10-02 12:30", "killed", card_record=None)
+        self._run("train-e5e5e5e5e5e5", "2026-10-02 13:00", "ok", {
+            "launch": 1, "task": dict(_TRAIN_TASK, debug=True), "speed": _step_speed(600.0),
+            "pieces": [_train_piece("5", "NVIDIA H200 NVL", 140, 20.0)]}, debug=True)
+        self._run("sample-f6f6f6f6f6f6", "2026-10-02 14:00", "ok", {
+            "launch": 1, "speed": {"unit": "task", "done": 9, "span_s": 173.0, "per_hour": 187.3},
+            "task": {"stage": "sample", "debug": False, "models.agent": "qwen3pt8_27b",
+                     "cards_per_agent_server": 1},
+            "pieces": [{"index": 2, "kind": "service", "service": "agent", "host": "tokyo108",
+                        "gpus": "5", "card_model": "NVIDIA H200 NVL", "card_gib": 140,
+                        "weights_gib": 50.22, "kv_cache_gib": 73.63, "max_concurrency": 8.99,
+                        "failure": None, "failure_line": None}]})
+        lines = self._render()
+        self.assertEqual(lines[2:], [
+            "| stage | task | card | ok | failed for memory | memory | median speed "
+            "| newest run | newest memory failure |",
+            "|---|---|---|---|---|---|---|---|---|",
+            "| sample | debug=False models.agent=qwen3pt8_27b cards_per_agent_server=1 "
+            "| NVIDIA H200 NVL 140 GiB | 1 | 0 | weights 50.22 + KV cache 73.63 GiB, concurrency "
+            "8.99x | 187.3 task/h | `sample-f6f6f6f6f6f6` | - |",
+            f"| train | debug=True {_TRAIN_TASK_FIELDS} | NVIDIA H200 NVL 140 GiB | 1 | 0 "
+            "| peak 20.0 GiB | 600.0 step/h | `train-e5e5e5e5e5e5` | - |",
+            f"| train | debug=False {_TRAIN_TASK_FIELDS} | NVIDIA H200 NVL 140 GiB | 2 | 0 "
+            "| peak 70.0 GiB | 147.0 step/h | `train-c3c3c3c3c3c3` | - |",
+            f"| train | debug=False {_TRAIN_TASK_FIELDS} | NVIDIA H100 NVL 93 GiB | 0 | 1 "
+            "| peak 92.04 GiB | - | `train-a1a1a1a1a1a1` "
+            f'| `train-a1a1a1a1a1a1` "{_OOM_LINE[:300]}" |',
+        ])
+
+    def test_a_failure_line_with_a_pipe_keeps_the_table_whole(self):
+        line = "ValueError: exceeds available Mamba cache blocks | 12 > 8"
+        self._run("train-a1a1a1a1a1a1", "2026-10-02 10:00", "launch_failed", {
+            "launch": 1, "task": _TRAIN_TASK, "speed": None,
+            "pieces": [_train_piece("0", "NVIDIA H100 NVL", 93, None, "memory", line)]})
+        row = self._render()[-1]
+        self.assertTrue(row.endswith(
+            '| `train-a1a1a1a1a1a1` "ValueError: exceeds available Mamba cache blocks \\| 12 > 8" |'))
+        self.assertIn("| - | - |", row)
+
+    def test_a_ledger_without_card_records(self):
+        self._run("build-b2b2b2b2b2b2", "2026-10-02 11:30", "ok", card_record="absent")
+        self.assertEqual(self._render(), [
+            "> One row per task identity and card model, from the card record on every finish "
+            "row of a sample, inject or train run; a run counts under each card model it held. "
+            "Newest first.",
+            "",
+            "No card records yet."])
 
 
 if __name__ == "__main__":
