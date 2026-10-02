@@ -305,6 +305,20 @@ need three cards that hold it. At vLLM's default `max_num_seqs`, Qwen3.8-27B nee
 cards (tokyo108 cards 3 to 5); using the H100 cards needs `--max-num-seqs <n>` in the
 row's `extra_flags` (gyb's file, part of the key).
 
+### 5.3c The third smoke, 2026-10-02 21:37 to 21:48 JST: Qwen3.8-27B on an H100
+
+gyb's ruling (2026-10-02): the model runs on any card type, so the `qwen3pt8_27b` row's
+`extra_flags` is now `"--language-model-only --max-num-seqs 64"` (his edit; 64 against the
+six requests a server sees at a time with 18 loop pieces over three servers). The key moved
+with the row. Debug chain on tokyo108: `sample-404371fb3da5` ok 9/9 on card 1 (H100, KV
+cache 32.3 GiB, 516,622 tokens, 3.94x at 131,072 tokens per request), `build-0ae315ab0369`
+ok, `train-faad617efcb7` ok on card 2, `eval-8a5a8b3fd2b4` ok.
+
+Not tested: a two-card server on 47 GiB cards. On tokyo107 (driver 535.113.01) one torch
+kernel of the vLLM venv runs with `envs/cuda-compat-13.0` on `LD_LIBRARY_PATH` and is
+refused without it (tested 2026-10-02 on card 0); the hang of 2026-09-29 was measured on
+tokyo106. tokyo107 had one free card at the time, so no two-card server was started.
+
 ### 5.4 Open points for gyb on these two
 
 1. Qwen3.8-27B's reasoning tier: DECIDED (gyb, 2026-10-02: "use Extra-high"). It is the

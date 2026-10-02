@@ -3,6 +3,10 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `eval-8a5a8b3fd2b4` | 2026-10-02 21:48 | eval | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `757d006` | ok | coverage@0.1=0.5 trig_acc@0.1=0.4 earliness@0.1=0.5583 wrong_spec@0.1=0.3 coverage@0.05=0.5 trig_acc@0.05=0.4 earliness@0.05=0.5583 wrong_spec@0.05=0.3 | report.md |
+| `train-faad617efcb7` | 2026-10-02 21:46 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `757d006` | ok | objective=0.3220338983050848 val_wacc=0.6779661016949152 val_lastcut_acc=0.5 | - |
+| `build-0ae315ab0369` | 2026-10-02 21:45 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `757d006` | ok | - | report.md |
+| `sample-404371fb3da5` | 2026-10-02 21:37 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `757d006` | ok | - | - |
 | `eval-37b2b867163c` | 2026-10-02 21:01 | eval | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `e75b688` | ok | - | report.md |
 | `train-260f5d0a7f3a` | 2026-10-02 20:58 | train | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `e75b688` | launching | - | - |
 | `train-08b69d4e133c` | 2026-10-02 20:57 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `8f34cd0` | ok | objective=0.43333333333333335 val_wacc=0.5666666666666667 val_lastcut_acc=0.5 | - |

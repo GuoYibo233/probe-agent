@@ -76,7 +76,7 @@ qwen3pt8_27b:
     max_model_len: 131072
     served_model_name: qwen3.8-27b
     env_result: {VLLM_USE_FLASHINFER_SAMPLER: "0"}
-    extra_flags: "--language-model-only"
+    extra_flags: "--language-model-only --max-num-seqs 64"
   serving:
     host: tokyo108
     port: 8107
