@@ -1,6 +1,6 @@
 # 03 close a dead incarnation before a relaunch
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 01
 Spec: .scratch/card-record-and-remaining-time/spec.md (section "The dead incarnation")
 

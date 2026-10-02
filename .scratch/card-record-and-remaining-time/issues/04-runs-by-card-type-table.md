@@ -1,6 +1,6 @@
 # 04 the "Runs by card type" table in jobs/RESULTS.md
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 01
 Spec: .scratch/card-record-and-remaining-time/spec.md (section "The lookup view")
 
