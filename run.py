@@ -33,7 +33,7 @@ RESERVED_SUBCOMMANDS = (
 )
 
 _SUBCOMMAND_ONE_LINE = {
-    "ls": "[workflow] [--debug] -- one folded line per run; closes a launch whose pieces are all dead",
+    "ls": "[workflow] [--debug] -- one folded line per run, with an open run's remaining time as left=<h>h<mm> (a train run's line names its phase, training or prediction); closes a launch whose pieces are all dead",
     "where": "<workflow> <setting> <stage> [--debug] -- the absolute run directory for one stage",
     "find": "section.field=value ... -- the runs whose settings_diff matches every given field",
     "kill": "<workflow> <setting> <stage> [--debug] -- end one run's pieces, write the killed finish row",
@@ -802,8 +802,25 @@ def _format_piece(piece: dict) -> str:
     return text
 
 
+def _format_left(row: dict) -> str:
+    """The remaining time on the ls line, `<h>h<mm>`: an open run's work left (`total - done`) at its recent rate, with a train run's current phase named, `training` or `prediction`, since each phase beats in a unit of its own and the training time leaves out the prediction pass; `-` for a run with a finish row or without a positive rate."""
+    rate = row.get("recent_rate")
+    # A run without a finish row carries its start row's word, `launching` (8.1).
+    if row.get("status") == "launching" and rate is not None and rate > 0:
+        done, total = row.get("progress", (0, 0))
+        hours, minutes = divmod(round((total - done) / rate / 60), 60)
+        left = f"{hours}h{minutes:02d}"
+        if row.get("stage") == "train":
+            # The training beats count in the stage's speed unit; the prediction pass beats in
+            # a unit of its own.
+            phase = "training" if row.get("unit") == registry.SPEED_UNIT["train"] else "prediction"
+            left += f" ({phase})"
+        return left
+    return "-"
+
+
 def _format_ls_row(row: dict, stale: str = "") -> str:
-    """8.6's folded line: run_id, stage, the names that own it, status, progress as done/total unit with a rate, the heartbeat's age, the eight flags, and per piece its verdict, session, host and cards."""
+    """8.6's folded line: run_id, stage, the names that own it, status, progress as done/total unit with a rate and the remaining time, the heartbeat's age, the eight flags, and per piece its verdict, session, host and cards."""
     run_id = row.get("run_id") or "-"
     stage = row.get("stage") or "-"
     workflow_name = row.get("workflow") or "-"
@@ -821,8 +838,8 @@ def _format_ls_row(row: dict, stale: str = "") -> str:
     pieces = row.get("pieces") or []
     piece_str = "; ".join(_format_piece(p) for p in pieces) or "-"
     line = (f"{run_id}  stage={stage}  {workflow_name}/{setting_name}  status={status}  "
-            f"progress={done}/{total}{unit}  rate={rate_str}  beat={beat_str}  "
-            f"flags={flag_str}  pieces={piece_str}")
+            f"progress={done}/{total}{unit}  rate={rate_str}  left={_format_left(row)}  "
+            f"beat={beat_str}  flags={flag_str}  pieces={piece_str}")
     if stale:
         line += f"  stale={stale}"
     return line
@@ -883,7 +900,7 @@ def cmd_ls(rest: list[str]) -> int:
         print("run.py ls: no runs")
         return 0
     _close_failed_launches(result)
-    print("run_id | stage | workflow/setting | status | progress | rate | heartbeat | flags | pieces")
+    print("run_id | stage | workflow/setting | status | progress | rate | left | heartbeat | flags | pieces")
     for row in result:
         print(_format_ls_row(row, (row_flags.get(row.get("run_id")) or {}).get("stale", "")))
     return 0

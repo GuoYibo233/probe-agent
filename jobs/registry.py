@@ -1452,8 +1452,13 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set, launch_t: str
     # few seconds neither drops the stall line to its floor nor reads as a zero rate afterwards.
     counting = [b for b in beats if not b.get("phase")]
     beat_ts = [b.get("ts") for b in counting]
-    recent_slice = counting[-DEFAULTS["typical_beats"]:] if counting else []
-    avg_rate, recent_rate = rates(counting[0] if counting else None, recent_slice)
+    # The rates are read over the counting beats in the newest counting beat's unit: a train
+    # piece counts steps and then prediction splits from 0 (`train/utils/trainer.py`), so each
+    # phase has a rate of its own, and the prediction phase has one from its second beat on.
+    unit_now = counting[-1].get("unit") if counting else None
+    phase_counting = [b for b in counting if b.get("unit") == unit_now]
+    recent_slice = phase_counting[-DEFAULTS["typical_beats"]:]
+    avg_rate, recent_rate = rates(phase_counting[0] if phase_counting else None, recent_slice)
     return {
         "kind": kind,
         "alive": alive,

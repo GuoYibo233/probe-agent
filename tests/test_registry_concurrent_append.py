@@ -2,8 +2,9 @@
 carries `mem_gib` only when it is given; the piece verdicts of 8.5 read a finished run as done
 and a run that lost a piece as dead; the finish row of a card stage's run carries the card
 record of the incarnation it closes; a relaunch of an open run whose pieces are all dead
-closes that incarnation with its finish row before its own start row; and RESULTS.md's "Runs
-by card type" table groups those records by task identity and card model."""
+closes that incarnation with its finish row before its own start row; RESULTS.md's "Runs by
+card type" table groups those records by task identity and card model; and the ls line prints
+an open run's remaining time, a train run's prediction phase timed from its own beats."""
 # venv: probe
 from __future__ import annotations
 
@@ -892,6 +893,106 @@ class RunsByCardTypeTest(unittest.TestCase):
             "Newest first.",
             "",
             "No card records yet."])
+
+
+def _load_run():
+    """The real run.py under a name of its own, with the repo root on sys.path for the modules
+    it imports. The ls line's formatting reads only the row it is given, so this writes nothing."""
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    spec = importlib.util.spec_from_file_location("run_under_test", REPO_ROOT / "run.py")
+    run = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(run)
+    return run
+
+
+class LsLineTest(unittest.TestCase):
+    """8.6's ls line prints an open run's remaining time after its rate: the work left at the
+    recent rate as `left=<h>h<mm>`, a train run's current phase named, the prediction phase's
+    rate read over its own beats, and `left=-` for a run with no rate or with a finish row."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.run_py = _load_run()
+
+    def _row(self, **fields) -> dict:
+        row = {"run_id": "sample-0123456789ab", "stage": "sample", "workflow": "baseline",
+               "setting": "gpt_oss_120b_appworld", "status": "launching",
+               "progress": (300, 1575), "unit": "task", "recent_rate": 0.03,
+               "beat_age_s": 12.0, "flags": {}, "pieces": []}
+        row.update(fields)
+        return row
+
+    def test_open_run_prints_its_remaining_time_after_the_rate(self):
+        # 1275 tasks at 0.03 tasks/s are 42500 s, 11 h 48 min.
+        line = self.run_py._format_ls_row(self._row())
+        self.assertIn("rate=0.03/s  left=11h48  beat=12s", line)
+
+    def test_no_rate_prints_a_dash(self):
+        line = self.run_py._format_ls_row(self._row(recent_rate=None))
+        self.assertIn("rate=-  left=-  beat=", line)
+
+    def test_finished_run_prints_a_dash(self):
+        line = self.run_py._format_ls_row(self._row(status="ok"))
+        self.assertIn("left=-  beat=", line)
+
+    def test_train_run_names_its_phase(self):
+        # 750 steps at 0.5 steps/s are 25 min; 3 prediction splits at 0.001 splits/s are 50 min.
+        training = self.run_py._format_ls_row(self._row(
+            stage="train", progress=(250, 1000), unit="step", recent_rate=0.5))
+        self.assertIn("left=0h25 (training)  beat=", training)
+        prediction = self.run_py._format_ls_row(self._row(
+            stage="train", progress=(1, 4), unit="prediction split", recent_rate=0.001))
+        self.assertIn("left=0h50 (prediction)  beat=", prediction)
+
+    def test_prediction_phase_rate_is_read_from_its_own_beats(self):
+        # A train piece's heartbeat file as the trainer writes it: step beats up to 1000/1000, a
+        # validation pass of touches, then prediction beats counting 0..3 of 8 splits a minute
+        # apart. The rate is read over the prediction beats alone, so the line prints the five
+        # splits left at one split a minute; a window reaching back into the step beats (done
+        # 1000 against a prediction count of 3) gives no rate at all.
+        registry = _load_registry()
+        now_ts = time.time()
+        launch_t = datetime.fromtimestamp(now_ts - 3 * 3600).strftime("%Y-%m-%d %H:%M")
+        piece = {"index": 0, "kind": "train", "host": "tokyo108", "session": "t-0",
+                 "started": launch_t}
+        rows = []
+        ts = now_ts - 2 * 3600
+        for i in range(21):
+            rows.append({"done": 50 * i, "total": 1000, "unit": "step", "ts": ts})
+            ts += 10
+        for i in range(5):
+            rows.append({"done": 1000, "total": 1000, "unit": "step", "ts": ts, "phase": "validate"})
+            ts += 3
+        rows.append({"done": 1000, "total": 1000, "unit": "step", "ts": ts})
+        prediction_ts = now_ts - 5 - 3 * 60
+        for i in range(4):
+            rows.append({"done": i, "total": 8, "unit": "prediction split",
+                         "ts": prediction_ts + 60 * i})
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            hb_dir = run_dir / "heartbeat"
+            hb_dir.mkdir()
+
+            def line_after(n_beats: int) -> tuple[dict, str]:
+                with open(hb_dir / "0-0.jsonl", "w") as f:
+                    for row in rows[:n_beats]:
+                        f.write(json.dumps(row) + "\n")
+                pv = registry._judge_pieces([piece], run_dir, {"t-0"}, launch_t)[0][0]
+                return pv, self.run_py._format_ls_row(self._row(
+                    stage="train", progress=(pv["done"], pv["total"]), unit=pv["unit"],
+                    recent_rate=pv["recent_rate"]))
+
+            pv, _line = line_after(21)
+            self.assertAlmostEqual(pv["recent_rate"], 5.0)
+            pv, line = line_after(28)
+            self.assertIsNone(pv["recent_rate"])
+            self.assertIn("left=-  beat=", line)
+            pv, line = line_after(len(rows))
+        self.assertEqual((pv["done"], pv["total"], pv["unit"]), (3, 8, "prediction split"))
+        self.assertAlmostEqual(pv["recent_rate"], 1 / 60)
+        self.assertAlmostEqual(pv["avg_rate"], 1 / 60)
+        self.assertIn("left=0h05 (prediction)  beat=", line)
 
 
 if __name__ == "__main__":
