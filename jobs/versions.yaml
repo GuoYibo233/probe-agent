@@ -192,3 +192,12 @@
   date: 2026-10-02
   why: 'Final review of card-record-and-remaining-time: the trainer''s load beat reports the step a resumed
     incarnation starts at instead of 0; only a heartbeat line changes, not the train stage''s output.'
+- stage: train
+  era: 2
+  from: 496a996bb848319d7af15899f477f326f7d09866
+  same: 77aa4f773d6fa19d6e9777720ba67b992a5bb2d7
+  date: 2026-10-02
+  why: 0d4798e packs each frame once per process (trainer.packed_events) and makes each prediction frame
+    once; the held packing is read and never written, the filter, sort and cap of the prediction frames
+    are unchanged, and its test shows two passes give the same batches, so the train stage's output does
+    not move.

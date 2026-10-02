@@ -3,6 +3,7 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `train-a4ab8e3abdaa` | 2026-10-02 23:49 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_cgen_qwen3_0pt6b_full | `77aa4f7` | ok | objective=0.9661016949152542 val_ce=2.819140935348252 val_tool_ok=0.06779661016949153 val_params_all_ok=0.03389830508474576 val_full_call_ok=0.03389830508474576 gen_n=59 | - |
 | `eval-dc592d5747bd` | 2026-10-02 22:58 | eval | train_probe/ctool_qwen3_0pt6b | `0d4798e` | ok | coverage@0.1=0.0 trig_acc@0.1=0.0 earliness@0.1=0.0 wrong_spec@0.1=0.0 coverage@0.05=0.0 trig_acc@0.05=0.0 earliness@0.05=0.0 wrong_spec@0.05=0.0 | report.md |
 | `train-6a48a0a83391` | 2026-10-02 22:54 | train | train_probe/ctool_qwen3_0pt6b | `0d4798e` | ok | objective=0.5625 val_wacc=0.4375 val_lastcut_acc=0.5 | - |
 | `sample-363859498f89` | 2026-10-02 22:41 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `abe9f97` | launching | - | - |
@@ -418,4 +419,5 @@
 
 | stage | task | card | ok | failed for memory | memory | median speed | newest run | newest memory failure |
 |---|---|---|---|---|---|---|---|---|
+| train | debug=True models.probe=qwen3_0pt6b probe.method=cgen probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA RTX A6000 47 GiB | 1 | 0 | peak 15.3 GiB | 34.2 step/h | `train-a4ab8e3abdaa` | - |
 | train | debug=True models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=False train.import_from=None | NVIDIA RTX A6000 47 GiB | 2 | 0 | peak 44.11 GiB | 56.2 step/h | `train-6a48a0a83391` | - |
