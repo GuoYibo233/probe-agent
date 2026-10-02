@@ -150,9 +150,12 @@ pass to exist.
 
 ### 4.4 Passes and seeds
 
-Decided 2026-09-30: three seeds for the final configuration. The passes are gyb's, settled
-in another session; this plan takes whatever pass count that session fixes. The per-pass
-copies make the pass count a cheap question: one three-pass run gives all three answers.
+Decided 2026-09-30: three seeds for the final configuration.
+
+Decided 2026-10-02 (gyb, in this plan's code session and again in the coordinating
+session): the full-history probe trains for 3 passes, the draft setting's value. The
+per-pass copies make the pass count a cheap question: one three-pass run gives all three
+answers.
 
 ## 5. Measurements before the settings are final
 
