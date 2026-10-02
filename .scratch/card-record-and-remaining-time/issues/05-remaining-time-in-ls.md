@@ -1,6 +1,6 @@
 # 05 remaining time in run.py ls
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 02
 Spec: .scratch/card-record-and-remaining-time/spec.md (section "Remaining time")
 
