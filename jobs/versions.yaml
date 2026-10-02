@@ -161,3 +161,27 @@
     makes, a history line written only under a text budget no sample run has, a no-op weights binding
     of the gpt-oss family and the render check's request built through the family with the same fields,
     so a sample run's records are unchanged
+- stage: train
+  era: 2
+  from: f37f0980fc62abfaa2d93cd90f7caf03cb4ddd9b
+  same: 56d49a09db19d3c3f9126923dfded4ee68b87382
+  date: 2026-10-02
+  why: 'Ticket 02 of card-record-and-remaining-time: the trainer''s counting beats carry mem_gib and the
+    prediction beats count in ''prediction split'', and the probe service prints its reserved memory to
+    its log; only the heartbeat lines and the log change, no stage''s output.'
+- stage: sample
+  era: 2
+  from: f37f0980fc62abfaa2d93cd90f7caf03cb4ddd9b
+  same: 56d49a09db19d3c3f9126923dfded4ee68b87382
+  date: 2026-10-02
+  why: 'Ticket 02 of card-record-and-remaining-time: the trainer''s counting beats carry mem_gib and the
+    prediction beats count in ''prediction split'', and the probe service prints its reserved memory to
+    its log; only the heartbeat lines and the log change, no stage''s output.'
+- stage: inject
+  era: 3
+  from: f37f0980fc62abfaa2d93cd90f7caf03cb4ddd9b
+  same: 56d49a09db19d3c3f9126923dfded4ee68b87382
+  date: 2026-10-02
+  why: 'Ticket 02 of card-record-and-remaining-time: the trainer''s counting beats carry mem_gib and the
+    prediction beats count in ''prediction split'', and the probe service prints its reserved memory to
+    its log; only the heartbeat lines and the log change, no stage''s output.'
