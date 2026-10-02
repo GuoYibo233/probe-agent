@@ -3,11 +3,19 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
-| `sample-c32dc16e29c0` | 2026-10-02 20:35 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `417a961` | launch_failed | - | - |
-| `sample-cbc238c756b5` | 2026-10-02 20:34 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `417a961` | launching | - | - |
+| `eval-37b2b867163c` | 2026-10-02 21:01 | eval | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `e75b688` | ok | - | report.md |
+| `train-260f5d0a7f3a` | 2026-10-02 20:58 | train | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `e75b688` | launching | - | - |
+| `train-08b69d4e133c` | 2026-10-02 20:57 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `8f34cd0` | ok | objective=0.43333333333333335 val_wacc=0.5666666666666667 val_lastcut_acc=0.5 | - |
+| `build-abb224af9438` | 2026-10-02 20:56 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `8f34cd0` | ok | - | report.md |
+| `eval-8d0602a3022d` | 2026-10-02 20:50 | eval | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `8f34cd0` | ok | - | report.md |
+| `sample-c32dc16e29c0` | 2026-10-02 20:49 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `8f34cd0` | ok | - | - |
+| `train-d34d7e0f5b52` | 2026-10-02 20:47 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `8f34cd0` | ok | objective=0.71875 val_wacc=0.28125 val_lastcut_acc=0.375 | - |
+| `build-c4decf6ce746` | 2026-10-02 20:46 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `8f34cd0` | ok | - | report.md |
+| `build-a70957a5932f` | 2026-10-02 20:43 | build | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `8f34cd0` | ok | - | report.md |
+| `sample-cbc238c756b5` | 2026-10-02 20:34 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `417a961` | ok | - | - |
 | `sample-2a60b1340c81` | 2026-10-02 05:03 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `99d3159` | launch_failed | - | - |
 | `sample-71747e8787c5` | 2026-10-02 05:03 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `99d3159` | launch_failed | - | - |
-| `sample-e09d7f1730d6` | 2026-10-01 17:57 | sample | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `025ddd4` | launching | - | - |
+| `sample-e09d7f1730d6` | 2026-10-01 17:57 | sample | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `025ddd4` | ok | - | - |
 | `score-7b4cf3204616` | 2026-10-01 16:20 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_nofill_theta_0pt6_qwen3_0pt6b_full_tuning | `de1f3c6` | ok | success=0.619 base_success=0.5655 delta_success=0.0536 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=168 | report.md |
 | `score-c562643a4911` | 2026-10-01 14:13 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p2_e2',inject.theta=0.6 | `75681be` | ok | success=0.619 base_success=0.5655 delta_success=0.0536 spec_tool_agree=0.1771 spec_call_agree=0.0244 n_records=168 | report.md |
 | `score-426d4e37c7b4` | 2026-10-01 13:43 | score | inject/run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p2_e1',inject.theta=0.9 | `75681be` | ok | success=0.5774 base_success=0.5655 delta_success=0.0119 spec_tool_agree=0.0941 spec_call_agree=0.0087 n_records=168 | report.md |

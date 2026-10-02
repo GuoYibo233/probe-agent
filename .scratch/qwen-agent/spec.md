@@ -281,6 +281,30 @@ above are corrected; the two rows already pasted into `models/table.yaml` still 
 `env_result: {}` and need the same edit by gyb. `env_result` is part of the key, so the
 sample directories move; nothing real has run under the old key.
 
+### 5.3b The second smoke, 2026-10-02 20:34 to 21:02 JST: both debug chains ok
+
+With `env_result: {VLLM_USE_FLASHINFER_SAMPLER: "0"}` in both rows (gyb's edit), all on
+tokyo108, `--debug`:
+
+| model | sample | build | train | eval |
+|---|---|---|---|---|
+| Qwen3.6-35B-A3B | `sample-cbc238c756b5` ok 9/9, card 5 (H200) | `build-c4decf6ce746` ok | `train-d34d7e0f5b52` ok, card 1 (H100) | `eval-8d0602a3022d` ok |
+| Qwen3.8-27B | `sample-c32dc16e29c0` ok 9/9, card 5 (H200), 2nd launch | `build-abb224af9438` ok | `train-08b69d4e133c` ok, card 1 (H100) | `eval-37b2b867163c` ok |
+
+- Every task run of both collections ended at the debug cap of 6 steps, none completed.
+- Qwen3.8-27B's first prompt is 1,256 tokens against Qwen3.6-35B-A3B's 1,218 on the same
+  task (`prefix_tok` of step 0 of `3d9a636_1__s42`).
+- Qwen3.8-27B's first launch, on card 0 (H100, 93 GiB), failed: `ValueError: max_num_seqs
+  (1024) exceeds available Mamba cache blocks (640)`. On an H200 it has 73.63 GiB of KV
+  cache (1,178,881 tokens) and starts. Qwen3.6-35B-A3B has 59.04 GiB of KV cache on an
+  H200 (3,001,344 tokens, block size 1,056 tokens) and has never been started on an H100.
+- The memory and time figures are in `.claude/skills/gpu-run/references/card_performance.md`.
+
+Consequence for the real collections (`sample.replicas: 3`): three servers of one model
+need three cards that hold it. At vLLM's default `max_num_seqs`, Qwen3.8-27B needs H200
+cards (tokyo108 cards 3 to 5); using the H100 cards needs `--max-num-seqs <n>` in the
+row's `extra_flags` (gyb's file, part of the key).
+
 ### 5.4 Open points for gyb on these two
 
 1. Qwen3.8-27B's reasoning tier: DECIDED (gyb, 2026-10-02: "use Extra-high"). It is the
