@@ -217,26 +217,31 @@ def check(args) -> int:
         if got != want:
             ok = False
 
-    plain = client.encode("a<|end|>b", False)
-    special = client.encode("a<|end|>b", True)
-    control_ids = client.encode("<|end|>", True)["ids"]
+    # The control-token fixture is the agent family's own stop token (the default of
+    # generation.stop), one control token of the tokenizer the service serves.
+    import models
+
+    control = models.agent(cfg.models.agent).module.STOP[0]
+    plain = client.encode(f"a{control}b", False)
+    special = client.encode(f"a{control}b", True)
+    control_ids = client.encode(control, True)["ids"]
     if len(control_ids) != 1:
-        print(f"check: <|end|> fixture: encoding '<|end|>' alone with special=true did not "
+        print(f"check: {control} fixture: encoding '{control}' alone with special=true did not "
               f"give a single control-token id, got {control_ids!r}")
         ok = False
     else:
         control_id = control_ids[0]
         if control_id in plain["ids"]:
-            print(f"check: <|end|> fixture: the special=false encoding contains the "
+            print(f"check: {control} fixture: the special=false encoding contains the "
                   f"control-token id {control_id}")
             ok = False
         if control_id not in special["ids"]:
-            print(f"check: <|end|> fixture: the special=true encoding does not contain the "
+            print(f"check: {control} fixture: the special=true encoding does not contain the "
                   f"control-token id {control_id}")
             ok = False
     back = client.decode(plain["ids"])
-    if back["text"] != "a<|end|>b":
-        print("check: <|end|> fixture: the special=false encoding does not round-trip")
+    if back["text"] != f"a{control}b":
+        print(f"check: {control} fixture: the special=false encoding does not round-trip")
         ok = False
 
     render = client.render(_CHECK_RENDER_MESSAGES, cfg.generation.effort, cfg.generation.date)
