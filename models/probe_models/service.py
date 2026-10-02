@@ -73,6 +73,8 @@ def serve(args) -> None:
     device = "cpu"
 
     if not args.render_only:
+        import torch
+
         from models.probe_models import base
 
         device = args.device
@@ -97,6 +99,12 @@ def serve(args) -> None:
 
         score_probe = base.load(None, None, probe_kind="classifier", ckpt_dir=score_dir, device=device)
         gen_probe = base.load(None, None, probe_kind="generator", ckpt_dir=gen_dir, device=device)
+
+        # The service's memory figure for the run's card record, read from this piece's log. The
+        # launcher hands this process its card as `--device cuda:<id>` with every card of the
+        # host visible, so the figure is read for that device and not for the current one.
+        print(f"probe service memory: {torch.cuda.memory_reserved(device) / 2**30:.2f} GiB "
+              "reserved after loading", flush=True)
 
     score_checkpoint = None if args.render_only else args.score_checkpoint
     gen_checkpoint = None if args.render_only else args.gen_checkpoint

@@ -273,7 +273,7 @@ models/probe_models/service.py — both ends of the probe service: the HTTP serv
   imports: models/__init__.py; experimental_settings/schema.py (load_frozen, for the check client's expected values); models/probe_models/base.py (inside serve()); [http.server, transformers and torch inside serve()]
   used by: agent/run_tasks.py (client: render), agent/step_with_probe.py (client: score, generate, encode, decode); jobs/launch.py starts it as a piece, which is a tmux command and not an import
   reads:   the checkpoint directories named on its command line, the weight copy of each that its --score-checkpoint / --gen-checkpoint flag names (best/ or pass_<n>/), including that copy's meta.json; the run directory's settings.yaml, the check client only
-  writes:  service_probe_0.json and its piece log in the run directory
+  writes:  service_probe_0.json and its piece log in the run directory; once its checkpoints are loaded, the log line `probe service memory: <x> GiB reserved after loading` (torch's reserved memory on its --device card)
   venv:    any at import; probe to serve
 
 ### agent/ — the loop that runs the agent model on tasks
