@@ -67,7 +67,8 @@ Before the launch, state an estimate: the work size (tasks x runs, or training s
 divided by the median speed of the same task on that card model in the `Runs by card type`
 table (a debug row's speed does not transfer to full sizes), or, for an older run, the hand
 table. Say which row the speed comes from, or that no row exists. A train row's speed counts
-the training steps with their validation; the prediction pass comes on top of it.
+the training steps with their validation; the model load and data preparation before the
+first step, and the prediction pass after the last, come on top of it.
 
 ## 3. Commit, then smoke
 

@@ -56,3 +56,22 @@ One opus reviewer over the files the feature touched (`jobs/`, `run.py`, `train/
 - A sample or inject card record from a real run (the ledger held one record, a debug train
   run, at review time).
 - The probe service's memory line (no inject walk has run since ticket 02).
+
+## Re-review of 496a996
+
+Both fixes close their findings at the root. Five minors:
+
+- **M1, fixed**: the record written before `train.import_from` joined the identity
+  (`train-3e562de5abb9`) lacks the key, so the same task would render as two rows for good.
+  `_card_type_lines` now reads a record's identity over today's `CARD_TASK_FIELDS`, an absent
+  field as None; a test covers it.
+- **M3, fixed**: the skill's step 2 also names the model load and the data preparation before
+  the first step as outside a train row's speed.
+- **M2, stays**: a resumed incarnation loads `optimizer.pt` and fast-forwards through the data
+  after its load beat, so its rate reads lower than a fresh one's and `left=` too long until
+  the first beats leave the recent window.
+- **M4, stays**: an imported run's own row shows a step speed that measures a file copy and a
+  peak of 0.0 GiB; it no longer mixes with training rows.
+- **M5, stays (older than the feature)**: a resume from a `last/` written on the final step
+  while `train.max_steps` cuts the run mid-epoch trains one extra step at learning rate 0 and
+  writes `steps + 1` into `train_done.json`; the weights do not change.

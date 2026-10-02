@@ -895,8 +895,14 @@ def _card_type_lines(rows: list[dict]) -> list[str]:
             continue
         run_id = row["run_id"]
         start = starts[run_id]
-        task = record.get("task") or {"stage": start.get("stage"),
-                                      "debug": bool(start.get("debug"))}
+        task = record.get("task")
+        if task:
+            # The identity is read over today's `CARD_TASK_FIELDS`: a field added after a record
+            # was written reads None, so the older record keeps its row.
+            task = {**task, **{dotted: None for dotted in CARD_TASK_FIELDS.get(task.get("stage"), ())
+                               if dotted not in task}}
+        else:
+            task = {"stage": start.get("stage"), "debug": bool(start.get("debug"))}
         identity = json.dumps(task, sort_keys=True, default=str)
         by_model: dict[str, list[dict]] = {}
         for piece in record.get("pieces") or []:

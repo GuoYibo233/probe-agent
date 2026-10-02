@@ -819,6 +819,21 @@ class RunsByCardTypeTest(unittest.TestCase):
         text = (self.tree / "jobs" / "RESULTS.md").read_text()
         return text.split("## Runs by card type\n", 1)[1].strip().splitlines()
 
+    def test_a_record_older_than_an_identity_field_keeps_its_row(self):
+        # A record written before `train.import_from` joined the train identity has no such key;
+        # a later record of the same task carries it as None. Both are one row.
+        older = {key: value for key, value in _TRAIN_TASK.items() if key != "train.import_from"}
+        self._run("train-a1a1a1a1a1a1", "2026-10-02 10:00", "ok", {
+            "launch": 1, "task": older, "speed": _step_speed(140.0),
+            "pieces": [_train_piece("4", "NVIDIA H200 NVL", 140, 60.0)]})
+        self._run("train-b2b2b2b2b2b2", "2026-10-02 11:00", "ok", {
+            "launch": 1, "task": _TRAIN_TASK, "speed": _step_speed(160.0),
+            "pieces": [_train_piece("3", "NVIDIA H200 NVL", 140, 62.0)]})
+        rows = [line for line in self._render() if line.startswith("| train |")]
+        self.assertEqual(rows, [
+            f"| train | debug=False {_TRAIN_TASK_FIELDS} | NVIDIA H200 NVL 140 GiB | 2 | 0 "
+            "| peak 62.0 GiB | 150.0 step/h | `train-b2b2b2b2b2b2` | - |"])
+
     def test_one_row_per_task_and_card_model_newest_first(self):
         # A full-size train run dies of memory on an H100 card and is relaunched on an H200 card,
         # where it finishes; a second run of the same task finishes on an H200 card; a debug run
