@@ -1,6 +1,6 @@
 # 01 the card record on every finish row
 
-Status: claimed
+Status: resolved
 Blocked by: -
 Spec: .scratch/card-record-and-remaining-time/spec.md (sections "The record", decisions 4, 5)
 
@@ -41,3 +41,7 @@ Every finish row that `registry.append_finish` (`jobs/registry.py:208`) appends 
 - No `jobs/versions.yaml` row (no stage's code set holds `jobs/` or `run.py`).
 
 ## Comments
+
+- 2026-10-02, wave 1 (ticket-run): DONE. Commits e4850c4..4dd8bc9 on ticket/2026-10-02-wave1/T01, merged at 1fc375b; one fix round (the record reads each piece log from where its incarnation's output starts; `jobs/launch.py` records a `log_offset` per launch and refire). Selfcheck green.
+  - Minors left for the final review: F2, the README `tests/` entry does not name the new `CardRecordTest` cases; F3, a missing `meta.json` gives `launch: 0` instead of `null`; N1, no test covers refire's `log_offset` line.
+  - Implementer notes: in an `ok` run with two agent replicas, a replica that died of memory while the other finished reads `done`, so its failure is not recorded; the sample task field is named `cards_per_agent_server`, the probe service figure `peak_gib`; building the record for the 22-piece `sample-e09d7f1730d6` took 3.75 s inside the registry lock (NFS reads); the tree has eight test modules now (`tests/test_qwen3_family.py`), not seven.
