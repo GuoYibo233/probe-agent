@@ -1,6 +1,6 @@
 # 03 close a dead incarnation before a relaunch
 
-Status: claimed
+Status: resolved
 Blocked by: 01
 Spec: .scratch/card-record-and-remaining-time/spec.md (section "The dead incarnation")
 
@@ -26,3 +26,8 @@ code through the walk.
   code set holds `jobs/` or `run.py`).
 
 ## Comments
+
+- 2026-10-02, wave 2 (ticket-run): DONE with no fix round. Branch ticket/2026-10-02-wave2/T03 (f37f098..29c8de4), merged at 488c590 (README tests/ line and the test docstring merged as the union with tickets 01 and 02). Selfcheck green, all eight test modules pass.
+  - Minor for the final review: F1, a ragged line in the `refire()` docstring.
+  - Shelved: a CPU stage (`build`, `eval`, `score`) whose process died and is walked again still gets no finish row for the dead incarnation. The ticket names `launch()` and `refire()` only, and a CPU stage carries no card record, which is what this feature records.
+  - Left as it was (implementer's concern): `registry.free()` runs before the dead incarnation is closed, so while its start row is younger than `launch_timeout_s` its card still counts as reserved and the relaunch lands on another card. Changing that changes placement, which is gyb's call.
