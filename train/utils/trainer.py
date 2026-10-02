@@ -131,6 +131,32 @@ def _dropped_overlong_events(df: pl.DataFrame, tok, max_len: int) -> int:
     return dropped
 
 
+# A method packs a split by tokenizing every row's whole text, and the same split is packed again
+# for the step count, for every pass, for every validation and for every weight copy the
+# prediction step reads. The packing of one frame depends on the frame, the method and max_len
+# alone, so it is built on the first request and held for the frames this process keeps: on the
+# full-history build (376,967 train rows of about 15,000 characters) one packing of the train
+# split measured 40 minutes on tokyo108 (train-260f5d0a7f3a, 2026-10-02).
+_PACKED: dict = {}
+
+
+def packed_events(build, df: pl.DataFrame, tok, max_len: int):
+    """What `build(df, tok, max_len)` returns (a method's `_build_events`), built on the first call for this frame object and returned again on every later one. The holder keeps the frame beside the result, so the frame's identity stays this frame's while it is held; the result is read by its callers and never written to."""
+    key = (build, id(df), max_len)
+    held = _PACKED.get(key)
+    if held is not None and held[0] is df:
+        return held[1]
+    result = build(df, tok, max_len)
+    _PACKED[key] = (df, result)
+    return result
+
+
+def forget_packed(df: pl.DataFrame) -> None:
+    """Drop every held packing of this frame, once the run has no further pass over it."""
+    for key in [k for k, held in _PACKED.items() if held[0] is df]:
+        del _PACKED[key]
+
+
 def _minibatches_per_epoch(method, train_df: pl.DataFrame, tok, cfg) -> int:
     """The count of logical minibatches one pass of method.batches() yields, read off the batches themselves. A method drops events by its own rules (every method: an event over train.max_len; cgen and cparam: also an event none of whose targets can be trained on), so the batches are the one place that knows what is kept. The shuffle moves events between minibatches and never changes how many there are, so the first epoch's count holds for every epoch."""
     return len({batch["mb"] for batch in method.batches(train_df, tok, _epoch_cfg(cfg, 0))})
@@ -578,6 +604,16 @@ def run(run_dir: Path, method) -> None:
     # (eval.checkpoint), and every row says which copy it came from.
     copies = [("best", best_dir)] + (_pass_copies(run_dir) if cfg.train.save_passes else [])
     predict_splits = list(cfg.train.predict.splits)
+    # Training and validation are over: their frames' packings are dropped, and each prediction
+    # split's frame is made once, so every weight copy reads one frame and one packing of it.
+    forget_packed(train_df)
+    forget_packed(val_df)
+    predict_frames = {}
+    for split in predict_splits:
+        split_df = df.filter(pl.col("split") == split).sort("example_id")
+        if cfg.train.predict.cap is not None:
+            split_df = split_df.head(cfg.train.predict.cap)
+        predict_frames[split] = split_df
     predict_total = len(predict_splits) * len(copies)
     _emit(hb, 0, predict_total, PREDICTION_UNIT)
     predictions: dict[str, int] = {}
@@ -590,11 +626,8 @@ def run(run_dir: Path, method) -> None:
             probe.set_training(False)
         pred_rows: list[dict] = []
         for split in predict_splits:
-            split_df = df.filter(pl.col("split") == split).sort("example_id")
-            if cfg.train.predict.cap is not None:
-                split_df = split_df.head(cfg.train.predict.cap)
             with _bf16_forward(probe):
-                pred_rows.extend(method.predict(probe, split_df, probe.tokenizer, cfg, hb))
+                pred_rows.extend(method.predict(probe, predict_frames[split], probe.tokenizer, cfg, hb))
             splits_done += 1
             if splits_done < predict_total:
                 _emit(hb, splits_done, predict_total, PREDICTION_UNIT)

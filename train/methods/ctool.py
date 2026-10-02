@@ -182,7 +182,7 @@ def batches(df, tok, cfg):
     this function takes -- 2.6 pins `batches(df, tok, cfg)` with no epoch argument, and this
     module's own acceptance fixture (A3.3) hands a `cfg.train` with no `epochs` field at all.
     """
-    events, _dropped = _build_events(df, tok, cfg.train.max_len)
+    events, _dropped = trainer.packed_events(_build_events, df, tok, cfg.train.max_len)
     budget = _TRAIN_BLOCK_MULT * cfg.train.max_len
     shuffled = list(events)
     random.Random(cfg.train.seed).shuffle(shuffled)
@@ -249,7 +249,7 @@ def reference_loss(probe, df):
 
 def _score_frame(probe, df, tok, cfg, block_mult: int, hb, phase: str) -> list[dict]:
     """Every row of df through the packed path: one dict per row with target, weight, cut_index/n_cuts (for the last-cut accuracy), score, label_pred and logits, all read through probe.labels order. One heartbeat touch per block, under `phase`, so a long pass never reads as a stall."""
-    events, _dropped = _build_events(df, tok, cfg.train.max_len)
+    events, _dropped = trainer.packed_events(_build_events, df, tok, cfg.train.max_len)
     budget = block_mult * cfg.train.max_len
     out = []
     with torch.no_grad():

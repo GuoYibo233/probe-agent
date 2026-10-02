@@ -163,6 +163,52 @@ class TestPackedLoss(unittest.TestCase):
                 self.assertLess(diff, TOL, f"{method_name} [{label}]: packed={packed / n} "
                                            f"plain={plain / n} diff={diff}")
 
+    def test_a_frame_is_packed_once_and_reused(self) -> None:
+        """A method packs one frame once per process: a second pass over the same frame yields
+        the same batches from the held packing without building it again, another frame is
+        packed on its own, and a forgotten frame is packed again."""
+        from train.utils import trainer
+
+        tok, _backbone, _cfg_model = _tiny_backbone_and_tokenizer()
+        d = pathlib.Path(tempfile.mkdtemp())
+        import types
+
+        for method_name in ("ctool", "cgen", "cparam"):
+            method = importlib.import_module(f"train.methods.{method_name}")
+            label, frame, max_len = next(iter(_cases(tok)))
+            path = d / f"reuse_{method_name}.parquet"
+            training_data.write(path, frame)
+            df = training_data.read(path)
+            other = training_data.read(path)
+            cfg = types.SimpleNamespace(
+                train=types.SimpleNamespace(seed=42, max_len=max_len, events_per_mb=2, accum=1),
+                probe=types.SimpleNamespace(method=method_name),
+                data=types.SimpleNamespace(env="appworld"))
+
+            built = []
+            real_build = method._build_events
+
+            def counting_build(frame_, tok_, max_len_, _real=real_build):
+                built.append(id(frame_))
+                return _real(frame_, tok_, max_len_)
+
+            method._build_events = counting_build
+            try:
+                with self.subTest(method=method_name, case=label):
+                    first = [b["input_ids"].tolist() for b in method.batches(df, tok, cfg)]
+                    second = [b["input_ids"].tolist() for b in method.batches(df, tok, cfg)]
+                    self.assertEqual(first, second)
+                    self.assertEqual(built, [id(df)], "the second pass built nothing")
+                    list(method.batches(other, tok, cfg))
+                    self.assertEqual(built, [id(df), id(other)], "another frame is packed on its own")
+                    trainer.forget_packed(df)
+                    list(method.batches(df, tok, cfg))
+                    self.assertEqual(built, [id(df), id(other), id(df)], "a forgotten frame is packed again")
+            finally:
+                method._build_events = real_build
+                trainer.forget_packed(df)
+                trainer.forget_packed(other)
+
     def test_ctool(self) -> None:
         self._check("ctool")
 

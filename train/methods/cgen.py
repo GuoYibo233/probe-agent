@@ -188,7 +188,7 @@ def batches(df, tok, cfg):
     One call is one pass over df ('mb' starts at 0 every call); trainer.run calls this fresh once
     per epoch (see train/methods/ctool.py's batches for why this function reads no epoch).
     """
-    events, _o, _t = _build_events(df, tok, cfg.train.max_len)
+    events, _o, _t = trainer.packed_events(_build_events, df, tok, cfg.train.max_len)
     budget = _TRAIN_BLOCK_MULT * cfg.train.max_len
     shuffled = list(events)
     random.Random(cfg.train.seed).shuffle(shuffled)
@@ -283,7 +283,7 @@ def reference_loss(probe, df):
 
 
 def _weighted_val_ce(probe, df, tok, cfg, hb) -> float:
-    events, _o, _t = _build_events(df, tok, cfg.train.max_len)
+    events, _o, _t = trainer.packed_events(_build_events, df, tok, cfg.train.max_len)
     budget = _VAL_BLOCK_MULT * cfg.train.max_len
     total_loss = 0.0
     total_weight = 0.0
