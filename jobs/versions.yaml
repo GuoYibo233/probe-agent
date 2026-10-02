@@ -201,3 +201,17 @@
     once; the held packing is read and never written, the filter, sort and cap of the prediction frames
     are unchanged, and its test shows two passes give the same batches, so the train stage's output does
     not move.
+- stage: sample
+  era: 2
+  from: 94cbcd4f774feba68b61c7c0a383bd49fc3e3c27
+  same: 33667962dbeeac50d515c1db4ce679d2e1790728
+  date: 2026-10-03
+  why: The probe service's launch check takes its control-token fixture from the agent family's stop token
+    instead of gpt-oss's literal <|end|>; only the launch check changes, not what sample or inject produce.
+- stage: inject
+  era: 3
+  from: 94cbcd4f774feba68b61c7c0a383bd49fc3e3c27
+  same: 33667962dbeeac50d515c1db4ce679d2e1790728
+  date: 2026-10-03
+  why: The probe service's launch check takes its control-token fixture from the agent family's stop token
+    instead of gpt-oss's literal <|end|>; only the launch check changes, not what sample or inject produce.
