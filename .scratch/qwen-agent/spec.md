@@ -319,6 +319,24 @@ kernel of the vLLM venv runs with `envs/cuda-compat-13.0` on `LD_LIBRARY_PATH` a
 refused without it (tested 2026-10-02 on card 0); the hang of 2026-09-29 was measured on
 tokyo106. tokyo107 had one free card at the time, so no two-card server was started.
 
+### 5.5 The real Qwen3.8-27B chain, 2026-10-02 22:03 to 2026-10-03 23:59 JST
+
+gyb's word "start qwen3.8 at H100" (2026-10-02). Setting
+`collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full`, launched with
+`sample.replicas=2 sample.pieces=12` (neither keyed; two H100 cards were free).
+
+| stage | run | where | result |
+|---|---|---|---|
+| sample | `sample-363859498f89` | tokyo108 cards 1 and 2 (H100), 12 loops | ok 1575/1575 in about 7 h; all task runs completed by themselves |
+| build (era 3) | `build-3e5b673a8f5b` | CPU | ok; superseded by the era-4 build below |
+| train (on the era-3 build) | `train-4d927b044d3e` | card 1 | ok, 3 passes (val objective 0.369 / 0.317 / 0.310); not evaluable after the era moved |
+| build (era 4, the prefix budget rule) | `build-8d7068d44d93` | CPU | ok |
+| train | `train-99e20bb741e2` | card 2 | ok, 2787 steps, 3 passes (val objective 0.351 / 0.313 / 0.307), copies `pass_1..3` with prediction rows |
+| eval | `eval-aeeb886e356d` | CPU | ok: risk 0.1 theta 0.75 coverage 0.6729 trig_acc 0.8976 earliness 0.4259 wrong_spec 0.0689; risk 0.05 theta 0.925 coverage 0.4266 trig_acc 0.9645 earliness 0.3348 wrong_spec 0.0152; n 15179 test events |
+
+The retraining was gyb's "redo" of 2026-10-03 after the build era row of 094816b. The
+Qwen3.6-35B-A3B real chain has not been started.
+
 ### 5.4 Open points for gyb on these two
 
 1. Qwen3.8-27B's reasoning tier: DECIDED (gyb, 2026-10-02: "use Extra-high"). It is the
