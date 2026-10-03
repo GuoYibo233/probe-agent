@@ -3,6 +3,8 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `train-99e20bb741e2` | 2026-10-03 18:48 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `aa7eb41` | launching | - | - |
+| `build-8d7068d44d93` | 2026-10-03 18:38 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `aa7eb41` | ok | - | report.md |
 | `train-125f0bd29777` | 2026-10-03 10:17 | train | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `768b70e` | launching | - | - |
 | `build-d925152ff254` | 2026-10-03 10:02 | build | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `768b70e` | ok | - | report.md |
 | `eval-db19669deb64` | 2026-10-03 10:01 | eval | train_probe/ctool_qwen3_0pt6b | `2dbd520` | ok | coverage@0.1=0.875 trig_acc@0.1=0.2857 earliness@0.1=0.9303 wrong_spec@0.1=0.625 coverage@0.05=0.875 trig_acc@0.05=0.2857 earliness@0.05=0.9303 wrong_spec@0.05=0.625 | report.md |
