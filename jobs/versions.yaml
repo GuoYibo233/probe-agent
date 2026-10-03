@@ -229,3 +229,12 @@
     replacing probe_text_max_chars, which counted the thinking): a build under a budget writes different
     texts for a step whose shorter cuts kept a round the longest cut had lost, and a live run under a
     budget scores different texts at those cuts'
+- stage: sample
+  era: 2
+  from: e41d9171fe34770c9fff430c84f253f5e1341e1a
+  same: 094816b9675b23a7a7470851ddddccd016bd4c89
+  date: 2026-10-03
+  why: Since e41d917 the files a sample run reads gained the prefix budget rule a sample run never applies,
+    the qwen3 family module a gpt-oss setting never loads, a memory line in the probe service's log, a
+    check-client fixture taken from the family's stop token, and the render check's request built through
+    the family with the same fields; a gpt-oss sample run's records are unchanged
