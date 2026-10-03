@@ -17,7 +17,7 @@ collection_2026_10_01_qwen3_30b_a3b_thinking_2507_full_history_ctool_qwen3_0pt6b
   models: {agent: qwen3_30b_a3b_thinking_2507, probe: qwen3_0pt6b}
   generation: {temperature: 0.6}
   probe:  {method: ctool, tuning: full}
-  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_prefix_max_chars: 100000}
   train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
   eval:   {risk: [0.10, 0.05]}
 
@@ -37,7 +37,7 @@ collection_2026_10_01_qwen3pt5_35b_a3b_full_history_ctool_qwen3_0pt6b_full:
   models: {agent: qwen3pt5_35b_a3b, probe: qwen3_0pt6b}
   generation: {temperature: 1.0}
   probe:  {method: ctool, tuning: full}
-  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_prefix_max_chars: 100000}
   train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
   eval:   {risk: [0.10, 0.05]}
 
@@ -58,7 +58,7 @@ collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full:
   models: {agent: qwen3pt6_35b_a3b, probe: qwen3_0pt6b}
   generation: {temperature: 1.0}
   probe:  {method: ctool, tuning: full}
-  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_prefix_max_chars: 100000}
   train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
   eval:   {risk: [0.10, 0.05]}
 
@@ -79,7 +79,7 @@ collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full:
   models: {agent: qwen3pt8_27b, probe: qwen3_0pt6b}
   generation: {temperature: 1.0}
   probe:  {method: ctool, tuning: full}
-  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_prefix_max_chars: 100000}
   train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
   eval:   {risk: [0.10, 0.05]}
 
@@ -99,6 +99,6 @@ collection_2026_10_02_qwen3pt8_27b_full_history_cgen_qwen3_0pt6b_full:
   models: {agent: qwen3pt8_27b, probe: qwen3_0pt6b}
   generation: {temperature: 1.0}
   probe:  {method: cgen, tuning: full}
-  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_prefix_max_chars: 100000}
   train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
   eval:   {theta_from: draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full}

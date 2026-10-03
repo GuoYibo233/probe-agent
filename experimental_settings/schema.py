@@ -82,7 +82,7 @@ class Build:
     min_think: int = 40                          # characters of thinking below which a step has no cuts
     hist_rounds: int = 3                         # tool rounds kept in the probe's text
     probe_result_cap: int = 400                  # characters per environment result inside the probe's text
-    probe_text_max_chars: int | None = None       # characters the probe's whole text may hold: the oldest history rounds are cut until it fits; null cuts none
+    probe_prefix_max_chars: int | None = None     # characters the probe's text before the thinking (the task line, the headers, the history lines) may hold: the oldest rounds are cut until it fits, the same for every cut of a step; null cuts none
     weight_mode: str = "uniform"                 # uniform (weight 1 per cut) or per_event (1/n)
     split_source: str = "env"                    # env = the benchmark's official task lists; hash = a stable hash split
     split_ratio: list[float] = field(default_factory=lambda: [0.8, 0.1, 0.1])  # train/val/test shares, used only under hash
@@ -211,7 +211,7 @@ AXES = {
 }
 RETIRED: set[tuple[str, str]] = set()          # (axis, value); empty today (3.3)
 REQUIRED_FIELDS = ("inject.theta", "inject.probe_score", "inject.probe_gen")
-PROBE_TEXT_FIELDS = ("min_think", "hist_rounds", "probe_result_cap", "probe_text_max_chars")   # 1.7
+PROBE_TEXT_FIELDS = ("min_think", "hist_rounds", "probe_result_cap", "probe_prefix_max_chars")   # 1.7
 # A weight copy's directory name inside a train run: best/ (today's only copy) or pass_<n>/
 # (the n-th pass's weights, written under train.save_passes).
 CHECKPOINT_NAME = re.compile(r"best|pass_[1-9][0-9]*")
@@ -296,7 +296,7 @@ STAGES = {
   "inject": {
     "sections": ("data", "models.agent", "generation",
                  "build.min_think", "build.hist_rounds", "build.probe_result_cap",
-                 "build.probe_text_max_chars",
+                 "build.probe_prefix_max_chars",
                  "inject.split", "inject.max_steps", "inject.theta", "inject.format",
                  "inject.arm", "inject.fire_nth_cut", "inject.max_inject_per_step",
                  "inject.max_cuts", "inject.max_new", "inject.store_token_ids",
@@ -1216,9 +1216,9 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
     # The whole-text budget cuts the oldest rounds until the text fits; a budget the task line
     # alone cannot fit in cuts every round of every text, so a value below 1 has no reading.
     if "build" in full:
-        budget = full["build"]["probe_text_max_chars"]
+        budget = full["build"]["probe_prefix_max_chars"]
         if budget is not None and budget < 1:
-            raise SchemaError(f"build.probe_text_max_chars: {budget} is below 1")
+            raise SchemaError(f"build.probe_prefix_max_chars: {budget} is below 1")
 
     # The reply cap replaces the tail of a tool reply with a line saying how many characters were
     # cut; a cap below 1 shows the model nothing of any reply.

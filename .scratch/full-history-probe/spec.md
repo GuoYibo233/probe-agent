@@ -134,6 +134,16 @@ steps where history matters most.
 
 Decided 2026-09-30: the first, cut the oldest rounds in the build and on the live side.
 
+Corrected 2026-10-03: the budget covers the text before the thinking (the task line, the
+headers and the history lines), not the whole text, so the rounds a step keeps are decided by
+the task and the history alone and every cut of the step starts with the same lines. The first
+form counted the thinking, so the shorter cuts of a long step kept an older round the longest
+cut had lost; the trainer packs a step's cuts behind one shared prefix and built a
+1.3-million-token block for such a step, which ended train-260f5d0a7f3a in its prediction
+phase (8 of 29,280 events were affected; the three validation numbers of that run, 0.712 /
+0.722 / 0.729 weighted accuracy after passes 1 to 3, stand as facts of build a70957a5932f).
+The field is `build.probe_prefix_max_chars`; the build and the live side both use it.
+
 ### 4.3 How the evaluation chooses a pass
 
 The evaluation stage reads prediction rows that the train stage writes from `best/`; it never

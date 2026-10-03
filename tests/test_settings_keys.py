@@ -146,7 +146,7 @@ class KeyMovementTest(unittest.TestCase):
 
     def test_probe_text_budget_moves_build_and_downstream(self):
         path, name = _first_setting("train_probe")
-        self.assertEqual(_moved(path, name, {"build.probe_text_max_chars": "50000"}),
+        self.assertEqual(_moved(path, name, {"build.probe_prefix_max_chars": "50000"}),
                          ["build", "train", "eval"])
 
     def test_reply_cap_moves_every_stage(self):
@@ -214,8 +214,8 @@ class RefusalTest(unittest.TestCase):
 
     def test_caps_below_one(self):
         path, name = _first_setting("train_probe")
-        self.assertIn("build.probe_text_max_chars",
-                      self._refused(path, name, {"build.probe_text_max_chars": "0"}))
+        self.assertIn("build.probe_prefix_max_chars",
+                      self._refused(path, name, {"build.probe_prefix_max_chars": "0"}))
         self.assertIn("generation.result_cap", self._refused(path, name, {"generation.result_cap": "0"}))
 
     def test_a_weight_copy_is_best_or_a_pass(self):

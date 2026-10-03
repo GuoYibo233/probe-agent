@@ -16,7 +16,7 @@ collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full:
   meta:   {notes: "classification probe, Qwen3-0.6B-Base, full tuning, the probe's text holds the task, every earlier round and the thinking so far; the result clip and the text budget are the first candidates before measurement 1 (spec section 5); three passes with a weight copy per pass; gradient checkpointing on for a 47 GiB card"}
   models: {probe: qwen3_0pt6b}
   probe:  {method: ctool, tuning: full}
-  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_prefix_max_chars: 100000}
   train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
   eval:   {risk: [0.10, 0.05]}
 

@@ -302,12 +302,12 @@ def main(run_dir: Path) -> None:
             n_cuts = len(offsets)
             cuts_per_event.append(n_cuts)
             eid = event_id(rid, step)
-            # The budget cuts the oldest rounds of the longest text of the event, the terminal
-            # cut's; a shorter cut of the same event loses at most as many. The report counts the
-            # events whose longest text lost rounds and the most rounds any text lost.
+            # The budget is decided by the task and the history alone, so every cut of this
+            # event loses the same rounds; the report counts the events that lost rounds and the
+            # most rounds any event lost.
             n_rounds_cut = probe_input.rounds_cut(
                 task_text, history, thinking, cfg.build.hist_rounds, cfg.build.probe_result_cap,
-                cfg.build.probe_text_max_chars,
+                cfg.build.probe_prefix_max_chars,
             )
             if n_rounds_cut > 0:
                 events_with_rounds_cut += 1
@@ -315,7 +315,7 @@ def main(run_dir: Path) -> None:
             for cut_index, cut in enumerate(offsets):
                 text = probe_input.assemble(
                     task_text, history, thinking[:cut], cfg.build.hist_rounds, cfg.build.probe_result_cap,
-                    cfg.build.probe_text_max_chars,
+                    cfg.build.probe_prefix_max_chars,
                 )
                 depth = round(cut / len(thinking), 4)
                 ex_id = example_id(eid, cut_index)
@@ -450,8 +450,8 @@ def main(run_dir: Path) -> None:
         f"- examples per depth decile: {[depth_deciles.get(i, 0) for i in range(10)]}",
         f"- text length p50={_pct(text_lens, 0.5)} p90={_pct(text_lens, 0.9)} "
         f"max={text_lens[-1] if text_lens else 0}",
-        f"- history rounds cut by build.probe_text_max_chars={cfg.build.probe_text_max_chars}: "
-        f"events whose longest text lost rounds {events_with_rounds_cut}, most rounds lost by one text {rounds_cut_max}",
+        f"- history rounds cut by build.probe_prefix_max_chars={cfg.build.probe_prefix_max_chars}: "
+        f"events that lost rounds {events_with_rounds_cut}, most rounds lost by one event {rounds_cut_max}",
         *token_lines,
         f"- records with an abort: {records_with_abort}; aborted steps skipped "
         f"(a gen row with no env row at the final row's step): {skip_abort}",

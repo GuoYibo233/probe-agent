@@ -58,15 +58,21 @@ def _clip(s: str, cap: int) -> str:
 
 # The probe reads the task, the last hist_rounds tool rounds and the thinking so far (the owner's
 # decision of 2026-09-22 and of 2026-09-30: a setting gives hist_rounds a value that covers a whole
-# record, and build.probe_text_max_chars bounds the whole text). Each history line is the round's
-# whole code block plus its result clipped to probe_result_cap. Under a budget, the oldest of the
-# kept rounds are cut one by one until the text fits, so the probe always sees the task, the newest
-# rounds and the thinking, and the build and the live side produce the same text from the same
-# rule (the budget is in characters so the build needs no tokenizer). The task and thinking lines
-# are never cut: a text that passes the budget with no round left is returned as it is, with the
-# history line saying the rounds were cut, so the probe can tell it from a first step's "(start)".
+# record, and build.probe_prefix_max_chars bounds the text before the thinking). Each history line
+# is the round's whole code block plus its result clipped to probe_result_cap. Under a budget, the
+# oldest of the kept rounds are cut one by one until the task line, the headers and the remaining
+# round lines fit, so the probe always sees the task, the newest rounds and the thinking, and the
+# build and the live side produce the same text from the same rule (the budget is in characters so
+# the build needs no tokenizer). The thinking is not counted, so the rounds a step keeps depend on
+# the task and the history alone: every cut of one step, offline and live, starts with the same
+# lines, which the trainer's packing relies on (one shared prefix per event; a per-cut budget
+# gave the cuts of one step different first rounds and a 1.3-million-token block, 2026-10-03).
+# A text whose rounds are all cut carries a history line saying so, so the probe can tell it from
+# a first step's "(start)".
 EMPTY_HISTORY = "(start)"
 CUT_HISTORY = "(earlier rounds cut)"
+
+
 def _lines(
     task: str,
     history: list[tuple[str, str]],
@@ -87,9 +93,9 @@ def _lines(
     rounds = [f"{action} -> {_clip(observation, probe_result_cap)}" for action, observation in kept]
     n_cut = 0
     if max_chars is not None and rounds:
-        # the joined text holds one newline between consecutive lines, so a line costs its
-        # length plus one
-        total = sum(len(s) + 1 for s in head + tail) - 1 + sum(len(s) + 1 for s in rounds)
+        # the budget covers the lines before the thinking: the joined text holds one newline
+        # between consecutive lines, so each of these lines costs its length plus one
+        total = sum(len(s) + 1 for s in head + rounds)
         while rounds and total > max_chars:
             total -= len(rounds[0]) + 1
             rounds = rounds[1:]
@@ -107,7 +113,7 @@ def assemble(
     probe_result_cap: int,
     max_chars: int | None = None,
 ) -> str:
-    """Build the probe's input text from the task, the last hist_rounds tool rounds, and the thinking so far; under max_chars (build.probe_text_max_chars) the oldest kept rounds are cut until the text fits."""
+    """Build the probe's input text from the task, the last hist_rounds tool rounds, and the thinking so far; under max_chars (build.probe_prefix_max_chars) the oldest kept rounds are cut until the lines before the thinking fit."""
     lines, _n_cut = _lines(task, history, thinking_prefix, hist_rounds, probe_result_cap, max_chars)
     return "\n".join(lines)
 
@@ -120,6 +126,6 @@ def rounds_cut(
     probe_result_cap: int,
     max_chars: int | None,
 ) -> int:
-    """How many of the kept rounds `assemble` cuts from the front of this text under max_chars; 0 without a budget."""
+    """How many of the kept rounds `assemble` cuts from the front under max_chars, the same for every thinking prefix of the step; 0 without a budget."""
     _lines_out, n_cut = _lines(task, history, thinking_prefix, hist_rounds, probe_result_cap, max_chars)
     return n_cut

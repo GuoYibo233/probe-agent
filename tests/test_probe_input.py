@@ -120,10 +120,16 @@ class AssembleTest(unittest.TestCase):
 
 
 class TextBudgetTest(unittest.TestCase):
-    """build.probe_text_max_chars cuts the oldest kept rounds until the text fits; the task and
-    the thinking are never cut, and no budget (None) leaves every text as it was."""
+    """build.probe_prefix_max_chars cuts the oldest kept rounds until the lines before the
+    thinking fit; the task and the thinking are never cut, the rounds a step keeps do not depend
+    on the thinking prefix, and no budget (None) leaves every text as it was."""
 
     HISTORY = [(f"a{i}()", f"r{i}") for i in range(5)]
+
+    @staticmethod
+    def _prefix_len(text: str) -> int:
+        """The characters before the [THINKING] line, each line with its newline."""
+        return text.index("[THINKING]")
 
     def test_no_budget_changes_nothing(self):
         for hist_rounds in (0, 2, 5, 9):
@@ -134,27 +140,45 @@ class TextBudgetTest(unittest.TestCase):
 
     def test_a_wide_budget_cuts_nothing(self):
         full = assemble("t", self.HISTORY, "th", 5, 400)
-        self.assertEqual(assemble("t", self.HISTORY, "th", 5, 400, len(full)), full)
-        self.assertEqual(rounds_cut("t", self.HISTORY, "th", 5, 400, len(full)), 0)
+        budget = self._prefix_len(full)
+        self.assertEqual(assemble("t", self.HISTORY, "th", 5, 400, budget), full)
+        self.assertEqual(rounds_cut("t", self.HISTORY, "th", 5, 400, budget), 0)
 
-    def test_the_oldest_rounds_go_first_until_the_text_fits(self):
+    def test_the_oldest_rounds_go_first_until_the_prefix_fits(self):
         full = assemble("t", self.HISTORY, "th", 5, 400)
+        prefix = self._prefix_len(full)
         one_round = len("a0() -> r0\n")
-        text = assemble("t", self.HISTORY, "th", 5, 400, len(full) - 1)
+        text = assemble("t", self.HISTORY, "th", 5, 400, prefix - 1)
         self.assertEqual(text, "Task: t\n[HISTORY]\na1() -> r1\na2() -> r2\na3() -> r3\na4() -> r4\n[THINKING]\nth")
-        self.assertLessEqual(len(text), len(full) - 1)
-        self.assertEqual(rounds_cut("t", self.HISTORY, "th", 5, 400, len(full) - 1), 1)
-        text = assemble("t", self.HISTORY, "th", 5, 400, len(full) - 3 * one_round)
+        self.assertLessEqual(self._prefix_len(text), prefix - 1)
+        self.assertEqual(rounds_cut("t", self.HISTORY, "th", 5, 400, prefix - 1), 1)
+        text = assemble("t", self.HISTORY, "th", 5, 400, prefix - 3 * one_round)
         self.assertEqual(text, "Task: t\n[HISTORY]\na3() -> r3\na4() -> r4\n[THINKING]\nth")
-        self.assertEqual(rounds_cut("t", self.HISTORY, "th", 5, 400, len(full) - 3 * one_round), 3)
+        self.assertEqual(rounds_cut("t", self.HISTORY, "th", 5, 400, prefix - 3 * one_round), 3)
+
+    def test_the_thinking_does_not_count(self):
+        """Every cut of one step keeps the same rounds, whatever the thinking prefix's length:
+        the trainer packs a step's cuts behind one shared prefix."""
+        prefix = self._prefix_len(assemble("t", self.HISTORY, "", 5, 400))
+        budget = prefix - 1
+        kept_lines = None
+        for thinking in ("", "th", "a much longer thinking prefix " * 50):
+            text = assemble("t", self.HISTORY, thinking, 5, 400, budget)
+            lines = text.split("\n")[: text.split("\n").index("[THINKING]")]
+            if kept_lines is None:
+                kept_lines = lines
+            self.assertEqual(lines, kept_lines)
+            self.assertEqual(rounds_cut("t", self.HISTORY, thinking, 5, 400, budget), 1)
+            self.assertTrue(text.endswith(thinking))
 
     def test_the_budget_counts_only_the_kept_rounds(self):
         """hist_rounds keeps the last two; the budget then cuts from those two, never from the
         three it never kept."""
         two = assemble("t", self.HISTORY, "th", 2, 400)
-        text = assemble("t", self.HISTORY, "th", 2, 400, len(two) - 1)
+        budget = self._prefix_len(two) - 1
+        text = assemble("t", self.HISTORY, "th", 2, 400, budget)
         self.assertEqual(text, "Task: t\n[HISTORY]\na4() -> r4\n[THINKING]\nth")
-        self.assertEqual(rounds_cut("t", self.HISTORY, "th", 2, 400, len(two) - 1), 1)
+        self.assertEqual(rounds_cut("t", self.HISTORY, "th", 2, 400, budget), 1)
 
     def test_task_and_thinking_survive_a_budget_below_them(self):
         """Every round is cut, and the history line says so instead of reading like a first step."""
@@ -165,22 +189,23 @@ class TextBudgetTest(unittest.TestCase):
         self.assertEqual(rounds_cut("a long task line", self.HISTORY, "a long thinking prefix", 5, 400, 1), 5)
         self.assertTrue(text.endswith("a long thinking prefix"), "the build's prefix gate still holds")
 
-    def test_the_text_fits_the_budget_whenever_a_round_is_left(self):
+    def test_the_prefix_fits_the_budget_whenever_a_round_is_left(self):
         for text in _random_texts(200, seed=2):
             history = [(f"call{i}()", text[: (i * 7) % max(len(text), 1)]) for i in range(6)]
             full = assemble(text[:20], history, text, 6, 400)
-            for budget in (1, 50, 100, 200, 400, 800, len(full)):
+            for budget in (1, 50, 100, 200, 400, 800, self._prefix_len(full)):
                 out = assemble(text[:20], history, text, 6, 400, budget)
                 n_cut = rounds_cut(text[:20], history, text, 6, 400, budget)
                 with self.subTest(text=text, budget=budget):
                     self.assertTrue(out.endswith(text))
                     if n_cut < 6:
-                        self.assertLessEqual(len(out), budget)
-                    # what is left is exactly the newest rounds, written as without a budget
-                    if n_cut < 6:
+                        self.assertLessEqual(self._prefix_len(out), budget)
+                        # what is left is exactly the newest rounds, written as without a budget
                         self.assertEqual(out, assemble(text[:20], history[n_cut:], text, 6, 400))
                     else:
                         self.assertIn("\n(earlier rounds cut)\n", out)
+                    # the same rounds for every thinking prefix of the step
+                    self.assertEqual(rounds_cut(text[:20], history, "", 6, 400, budget), n_cut)
 
     def test_a_budget_below_one_is_refused(self):
         with self.assertRaises(ValueError):
