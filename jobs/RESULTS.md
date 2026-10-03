@@ -3,6 +3,8 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `train-125f0bd29777` | 2026-10-03 10:17 | train | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `768b70e` | launching | - | - |
+| `build-d925152ff254` | 2026-10-03 10:02 | build | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `768b70e` | ok | - | report.md |
 | `eval-db19669deb64` | 2026-10-03 10:01 | eval | train_probe/ctool_qwen3_0pt6b | `2dbd520` | ok | coverage@0.1=0.875 trig_acc@0.1=0.2857 earliness@0.1=0.9303 wrong_spec@0.1=0.625 coverage@0.05=0.875 trig_acc@0.05=0.2857 earliness@0.05=0.9303 wrong_spec@0.05=0.625 | report.md |
 | `build-3bbbdccd6925` | 2026-10-03 09:58 | build | train_probe/ctool_qwen3_0pt6b | `2dbd520` | ok | - | report.md |
 | `train-7c9171c90df1` | 2026-10-03 09:58 | train | train_probe/ctool_qwen3_0pt6b | `2dbd520` | ok | objective=0.59375 val_wacc=0.40625 val_lastcut_acc=0.375 | - |
