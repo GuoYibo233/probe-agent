@@ -238,3 +238,11 @@
     the qwen3 family module a gpt-oss setting never loads, a memory line in the probe service's log, a
     check-client fixture taken from the family's stop token, and the render check's request built through
     the family with the same fields; a gpt-oss sample run's records are unchanged
+- stage: sample
+  era: 2
+  from: 025ddd452da33bf85bc158a2fc1aae44f28e713b
+  same: 8bd36ffd0572e3797764665649735169315c6424
+  date: 2026-10-03
+  why: Since 025ddd4 the three files a sample run reads changed in the prefix budget rule and the field
+    name a sample run never applies, the inject loop's health check, the probe service's memory line and
+    its stop-token check fixture; a gpt-oss sample run's records are unchanged
