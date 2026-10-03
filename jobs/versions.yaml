@@ -246,3 +246,12 @@
   why: Since 025ddd4 the three files a sample run reads changed in the prefix budget rule and the field
     name a sample run never applies, the inject loop's health check, the probe service's memory line and
     its stop-token check fixture; a gpt-oss sample run's records are unchanged
+- stage: sample
+  era: 2
+  from: abe9f972ba3b24e310540e7d64c09609144af0aa
+  same: 768b70e661eaea86ef4652588b2f639818236ae9
+  date: 2026-10-03
+  why: Since abe9f97 the three files a sample run reads changed in the probe text budget rule and its
+    field name, which a sample run never applies (the budget cuts probe texts on the inject side and in
+    the build), and in the probe service's launch check fixture, now the agent family's own stop token;
+    a sample run's records are unchanged (the collection 363859498f89)
