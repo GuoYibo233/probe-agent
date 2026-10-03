@@ -3,9 +3,10 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `eval-4319ab69d9c3` | 2026-10-03 21:43 | eval | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `3a4a301` | ok | coverage@0.1=0.7371 trig_acc@0.1=0.9026 earliness@0.1=0.5913 wrong_spec@0.1=0.0718 coverage@0.05=0.4801 trig_acc@0.05=0.961 earliness@0.05=0.5731 wrong_spec@0.05=0.0187 | report.md |
 | `train-99e20bb741e2` | 2026-10-03 18:48 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `aa7eb41` | launching | - | - |
 | `build-8d7068d44d93` | 2026-10-03 18:38 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `aa7eb41` | ok | - | report.md |
-| `train-125f0bd29777` | 2026-10-03 10:17 | train | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `768b70e` | launching | - | - |
+| `train-125f0bd29777` | 2026-10-03 10:17 | train | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `768b70e` | ok | objective=0.26698621627520436 val_wacc=0.7330137837247956 val_lastcut_acc=0.8829516539440203 | - |
 | `build-d925152ff254` | 2026-10-03 10:02 | build | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `768b70e` | ok | - | report.md |
 | `eval-db19669deb64` | 2026-10-03 10:01 | eval | train_probe/ctool_qwen3_0pt6b | `2dbd520` | ok | coverage@0.1=0.875 trig_acc@0.1=0.2857 earliness@0.1=0.9303 wrong_spec@0.1=0.625 coverage@0.05=0.875 trig_acc@0.05=0.2857 earliness@0.05=0.9303 wrong_spec@0.05=0.625 | report.md |
 | `build-3bbbdccd6925` | 2026-10-03 09:58 | build | train_probe/ctool_qwen3_0pt6b | `2dbd520` | ok | - | report.md |
@@ -431,6 +432,7 @@
 
 | stage | task | card | ok | failed for memory | memory | median speed | newest run | newest memory failure |
 |---|---|---|---|---|---|---|---|---|
+| train | debug=False models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 1 | 0 | peak 44.0 GiB | 592.5 step/h | `train-125f0bd29777` | - |
 | train | debug=True models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=False train.import_from=None | NVIDIA RTX A6000 47 GiB | 3 | 0 | peak 44.11 GiB | 48.8 step/h | `train-7c9171c90df1` | - |
 | sample | debug=False models.agent=qwen3pt8_27b cards_per_agent_server=1 | NVIDIA H100 NVL 93 GiB | 1 | 0 | weights 50.22 + KV cache 33.46 GiB, concurrency 4.09x | 219.5 task/h | `sample-363859498f89` | - |
 | inject | debug=True models.agent=qwen3pt8_27b probe_score.backbone=qwen3_0pt6b probe_score.tuning=full probe_gen.backbone=qwen3_0pt6b probe_gen.tuning=full | NVIDIA RTX A6000 47 GiB | 1 | 0 | probe service peak 2.24 GiB | 37.8 task/h | `inject-0ead2ad8f280` | - |
