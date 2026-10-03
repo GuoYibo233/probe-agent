@@ -215,3 +215,17 @@
   date: 2026-10-03
   why: The probe service's launch check takes its control-token fixture from the agent family's stop token
     instead of gpt-oss's literal <|end|>; only the launch check changes, not what sample or inject produce.
+- stage: build
+  era: 4
+  date: 2026-10-03
+  why: 'The probe text budget is decided by the task and the history alone (build.probe_prefix_max_chars,
+    replacing probe_text_max_chars, which counted the thinking): a build under a budget writes different
+    texts for a step whose shorter cuts kept a round the longest cut had lost, and a live run under a
+    budget scores different texts at those cuts'
+- stage: inject
+  era: 4
+  date: 2026-10-03
+  why: 'The probe text budget is decided by the task and the history alone (build.probe_prefix_max_chars,
+    replacing probe_text_max_chars, which counted the thinking): a build under a budget writes different
+    texts for a step whose shorter cuts kept a round the longest cut had lost, and a live run under a
+    budget scores different texts at those cuts'
