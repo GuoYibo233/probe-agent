@@ -3,6 +3,10 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `eval-b1bf7058f11b` | 2026-10-04 22:18 | eval | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `47dae68` | ok | - | report.md |
+| `sample-24da51117512` | 2026-10-04 22:18 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `47dae68` | launch_failed | - | - |
+| `build-4d79f95a6903` | 2026-10-04 22:16 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `47dae68` | ok | - | report.md |
+| `train-4a9594541c2d` | 2026-10-04 22:16 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `47dae68` | ok | objective=0.71875 val_wacc=0.28125 val_lastcut_acc=0.375 | - |
 | `eval-97c0045b450f` | 2026-10-04 01:50 | eval | draft/full_history/collection_2026_10_01_three_rounds_ctool_qwen3_0pt6b_full | `2f41c0d` | ok | coverage@0.1=0.6816 trig_acc@0.1=0.907 earliness@0.1=0.5662 wrong_spec@0.1=0.0634 coverage@0.05=0.4635 trig_acc@0.05=0.9541 earliness@0.05=0.5694 wrong_spec@0.05=0.0213 | report.md |
 | `eval-aeeb886e356d` | 2026-10-04 00:02 | eval | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `7ec28b8` | ok | coverage@0.1=0.6729 trig_acc@0.1=0.8976 earliness@0.1=0.4259 wrong_spec@0.1=0.0689 coverage@0.05=0.4266 trig_acc@0.05=0.9645 earliness@0.05=0.3348 wrong_spec@0.05=0.0152 | report.md |
 | `train-29715d50906f` | 2026-10-03 21:59 | train | draft/full_history/collection_2026_10_01_three_rounds_ctool_qwen3_0pt6b_full | `7ec28b8` | ok | objective=0.2830963502900262 val_wacc=0.7169036497099738 val_lastcut_acc=0.8767612621551896 | - |
@@ -32,7 +36,7 @@
 | `build-0ae315ab0369` | 2026-10-02 21:45 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `757d006` | ok | - | report.md |
 | `sample-404371fb3da5` | 2026-10-02 21:37 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `757d006` | ok | - | - |
 | `eval-37b2b867163c` | 2026-10-02 21:01 | eval | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `e75b688` | ok | - | report.md |
-| `train-260f5d0a7f3a` | 2026-10-02 20:58 | train | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `e75b688` | launching | - | - |
+| `train-260f5d0a7f3a` | 2026-10-02 20:58 | train | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `e75b688` | launch_failed | - | - |
 | `train-08b69d4e133c` | 2026-10-02 20:57 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `8f34cd0` | ok | objective=0.43333333333333335 val_wacc=0.5666666666666667 val_lastcut_acc=0.5 | - |
 | `build-abb224af9438` | 2026-10-02 20:56 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `8f34cd0` | ok | - | report.md |
 | `eval-8d0602a3022d` | 2026-10-02 20:50 | eval | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `8f34cd0` | ok | - | report.md |
@@ -436,8 +440,10 @@
 
 | stage | task | card | ok | failed for memory | memory | median speed | newest run | newest memory failure |
 |---|---|---|---|---|---|---|---|---|
+| train | debug=False models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 2 | 0 | peak 44.0 GiB | 592.5 step/h | `train-260f5d0a7f3a` | - |
+| sample | debug=False models.agent=qwen3pt6_35b_a3b cards_per_agent_server=1 | NVIDIA H100 NVL 93 GiB | 0 | 1 | weights 64.69 + KV cache 16.06 GiB, concurrency 6.23x | - | `sample-24da51117512` | `sample-24da51117512` "(EngineCore pid=3264492) ValueError: max_num_seqs (1024) exceeds available Mamba cache blocks (797). Each decode sequence requires one Mamba cache block, so CUDA graph capture cannot proceed. Please lower max_num_seqs to at most 797 or increase gpu_memory_utilization." |
+| train | debug=True models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 1 | 0 | peak 12.6 GiB | 92.4 step/h | `train-4a9594541c2d` | - |
 | train | debug=False models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 1 | 0 | peak 17.58 GiB | 1578.6 step/h | `train-29715d50906f` | - |
-| train | debug=False models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 2 | 0 | peak 44.0 GiB | 773.1 step/h | `train-99e20bb741e2` | - |
 | train | debug=True models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=False train.import_from=None | NVIDIA RTX A6000 47 GiB | 3 | 0 | peak 44.11 GiB | 48.8 step/h | `train-7c9171c90df1` | - |
 | sample | debug=False models.agent=qwen3pt8_27b cards_per_agent_server=1 | NVIDIA H100 NVL 93 GiB | 1 | 0 | weights 50.22 + KV cache 33.46 GiB, concurrency 4.09x | 219.5 task/h | `sample-363859498f89` | - |
 | inject | debug=True models.agent=qwen3pt8_27b probe_score.backbone=qwen3_0pt6b probe_score.tuning=full probe_gen.backbone=qwen3_0pt6b probe_gen.tuning=full | NVIDIA RTX A6000 47 GiB | 1 | 0 | probe service peak 2.24 GiB | 37.8 task/h | `inject-0ead2ad8f280` | - |
