@@ -1,5 +1,5 @@
 """Run each task and seed of a piece's rotation to completion, claiming tasks across pieces and writing the record."""
-# venv: the environment's (appworld today)
+# venv: the environment's (appworld, tau2 or bfcl)
 from __future__ import annotations
 
 import argparse
@@ -92,6 +92,9 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
         agent=AgentClient(agent_doc["base_url"], cfg.models.agent_row["served_model_name"]),
         probe=ProbeClient(probe_doc["base_url"]),
     )
+    # The same replica's endpoint, for a benchmark that simulates the other party of the
+    # conversation with the agent model (tau2's customer).
+    env.bind_agent(agent_doc["base_url"], cfg.models.agent_row["served_model_name"])
 
     health = clients.probe.health()
     if health.get("render") != "ids":
@@ -145,6 +148,9 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
             # benchmark whose tasks carry none. With the pinned date on an AppWorld task the
             # model computed "last year" and "yesterday" from 2026 inside a 2023 world.
             date = cfg.generation.date if env.task_date is None else env.task_date
+            # The developer message of this task: one text for every AppWorld task, the task's
+            # own policy or function list for a benchmark that has one.
+            instructions = env.instructions(cfg.data.instructions)
             writer.row("meta", **_meta_fields(cfg, task_id, seed, env.SEED, split, arm, task_text, date, i))
             meta_written = True
 
@@ -152,7 +158,7 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
                 for step_index in range(run.max_steps):
                     messages = to_messages(
                         writer.frame(), step_index, task_text,
-                        env.INSTRUCTIONS[cfg.data.instructions], env.NO_CODE_MESSAGE, extra,
+                        instructions, env.NO_CODE_MESSAGE, extra,
                     )
                     # the two calls that reach a service; the clients have already retried
                     try:

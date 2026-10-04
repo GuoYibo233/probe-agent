@@ -197,10 +197,18 @@ class Setting:
 
 
 AXES = {
-    "data.env":            ("appworld",),
+    "data.env":            ("appworld", "tau2", "bfcl"),
     "data.instructions":   ("v1", "v2"),
-    "sample.split":        ("train", "dev", "test"),
-    "inject.split":        ("train", "dev", "test"),
+    "sample.split":        ("train", "dev", "test",
+                            "airline_train", "airline_test", "retail_train", "retail_test",
+                            "telecom_train", "telecom_test",
+                            "multi_turn_base", "multi_turn_miss_func", "multi_turn_miss_param",
+                            "multi_turn_long_context"),
+    "inject.split":        ("train", "dev", "test",
+                            "airline_train", "airline_test", "retail_train", "retail_test",
+                            "telecom_train", "telecom_test",
+                            "multi_turn_base", "multi_turn_miss_func", "multi_turn_miss_param",
+                            "multi_turn_long_context"),
     "generation.effort":   ("high", "medium", "low"),
     "probe.method":        ("ctool", "cgen", "cparam"),
     "probe.tuning":        ("full", "lora"),
