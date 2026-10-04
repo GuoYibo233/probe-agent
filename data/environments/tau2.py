@@ -18,13 +18,15 @@ from data.environments import Environment, StepObservation
 # The part of the developer message that is ours: tau2's own agent prompt (its AGENT_INSTRUCTION
 # and the domain policy, in its SYSTEM_PROMPT) comes first, word for word, and this text follows
 # it, because the official agent hands its tools to the model through the API's function calling
-# while this loop reads tool calls out of the reply text. The format sentence is BFCL's
-# prompting-mode one (its "classic" style) for a single call, and {tools} is replaced by the
-# domain's tool schemas, one JSON object per tool, the way BFCL's prompting mode lists its
-# functions; a debug run whose wording lacked "you MUST" got the Qwen agent's native
-# <tool_call> markup instead.
+# while this loop reads tool calls out of the reply text. The format sentences are BFCL's
+# prompting-mode ones word for word (its "classic" style, Python calls in a list), followed by
+# what replaces the placeholders and one example, and {tools} is replaced by the domain's tool
+# schemas, one JSON object per tool, the way BFCL's prompting mode lists its functions. Two
+# softer single-call wordings failed in the 2026-10-05 debug runs: the Qwen3.6 agent answered
+# in its native <tool_call> markup, then wrapped each call as func_name(get_user_details(...)).
 INSTRUCTIONS = {"v1": """<tool_call_format>
-If you decide to make a tool call, you MUST put it in the format of func_name(params_name1=params_value1, params_name2=params_value2...), where each value is a JSON value (a string in double quotes, a number, true, false, null, a list or an object), and you SHOULD NOT include any other text in that reply. For example, a tool named get_weather with the parameters city and days is called as get_weather(city="Paris", days=3). Do not use any other tool-call format. A reply that is not a tool call in this format is sent to the user as your message.
+If you decide to invoke any of the function(s), you MUST put it in the format of [func_name1(params_name1=params_value1, params_name2=params_value2...), func_name2(params)] You SHOULD NOT include any other text in the response.
+Write the function's own name in place of func_name and its parameter names in place of params_name, and give each value as a JSON value (a string in double quotes, a number, true, false, null, a list or an object). For example, a function get_weather with the parameters city and days is invoked as [get_weather(city="Paris", days=3)]. A reply that is not in this format is sent to the user as your message.
 The result of a tool call comes back to you as a list of {'role': 'tool', 'name': <the call>, 'content': <its output>}.
 </tool_call_format>
 <tools>
@@ -274,9 +276,10 @@ class Tau2(Environment):
     INSTRUCTIONS = INSTRUCTIONS
     # What the agent model is told after a reply this loop could not read (an empty reply, or a
     # call whose arguments are not named JSON values); the conversation does not move.
-    NO_CODE_MESSAGE = ("That reply was not read. A tool call is the call alone, written as tool_name(parameter=value, ...) "
-                       "with every argument given by its parameter name and every value a JSON value; any other reply "
-                       "is a message to the user. Reply with one tool call or one message to the user.")
+    NO_CODE_MESSAGE = ("That reply was not read. A tool call is written as [func_name(params_name=params_value, ...)] "
+                       "with the function's own name in place of func_name, every argument given by its parameter name, "
+                       "and every value a JSON value, for example [get_weather(city=\"Paris\", days=3)]; any other reply "
+                       "is a message to the user. Reply with a tool call or a message to the user.")
     RESULT_CAP = 500000
     # The domain's world takes no seed: it is its database file; the user simulator, the one
     # sampled party, takes the loop's seed through tau2's Orchestrator(seed=...).
