@@ -3,6 +3,7 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `sample-62d6f3de27bf` | 2026-10-05 00:25 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `5d46d9a` | launching | - | - |
 | `eval-b1bf7058f11b` | 2026-10-04 22:18 | eval | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `47dae68` | ok | - | report.md |
 | `sample-24da51117512` | 2026-10-04 22:18 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `47dae68` | launch_failed | - | - |
 | `build-4d79f95a6903` | 2026-10-04 22:16 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `47dae68` | ok | - | report.md |
@@ -19,7 +20,7 @@
 | `eval-db19669deb64` | 2026-10-03 10:01 | eval | train_probe/ctool_qwen3_0pt6b | `2dbd520` | ok | coverage@0.1=0.875 trig_acc@0.1=0.2857 earliness@0.1=0.9303 wrong_spec@0.1=0.625 coverage@0.05=0.875 trig_acc@0.05=0.2857 earliness@0.05=0.9303 wrong_spec@0.05=0.625 | report.md |
 | `build-3bbbdccd6925` | 2026-10-03 09:58 | build | train_probe/ctool_qwen3_0pt6b | `2dbd520` | ok | - | report.md |
 | `train-7c9171c90df1` | 2026-10-03 09:58 | train | train_probe/ctool_qwen3_0pt6b | `2dbd520` | ok | objective=0.59375 val_wacc=0.40625 val_lastcut_acc=0.375 | - |
-| `train-4d927b044d3e` | 2026-10-03 06:14 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `bb2239a` | launching | - | - |
+| `train-4d927b044d3e` | 2026-10-03 06:14 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `bb2239a` | ok | objective=0.31040225467589033 val_wacc=0.6895977453241097 val_lastcut_acc=0.8192508710801394 | - |
 | `build-3e5b673a8f5b` | 2026-10-03 06:04 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt8_27b_full_history_ctool_qwen3_0pt6b_full | `bb2239a` | ok | - | report.md |
 | `score-26873d0ac9d2` | 2026-10-03 01:04 | score | draft/qwen3pt8_27b_full_history_inject/inject_2026_10_02_qwen3pt8_27b_full_history_arm_probe_qwen3_0pt6b_full/inject.format='p1_e1',inject.theta=0.6 | `ac1f07c` | ok | success=0.0 base_success=0.0 delta_success=0.0 spec_tool_agree=0.1765 spec_call_agree=0.0588 n_records=3 | report.md |
 | `inject-0ead2ad8f280` | 2026-10-03 00:02 | inject | draft/qwen3pt8_27b_full_history_inject/inject_2026_10_02_qwen3pt8_27b_full_history_arm_probe_qwen3_0pt6b_full/inject.format='p1_e1',inject.theta=0.6 | `ac1f07c` | ok | - | - |
@@ -440,7 +441,7 @@
 
 | stage | task | card | ok | failed for memory | memory | median speed | newest run | newest memory failure |
 |---|---|---|---|---|---|---|---|---|
-| train | debug=False models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 2 | 0 | peak 44.0 GiB | 592.5 step/h | `train-260f5d0a7f3a` | - |
+| train | debug=False models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 3 | 0 | peak 44.0 GiB | 773.1 step/h | `train-4d927b044d3e` | - |
 | sample | debug=False models.agent=qwen3pt6_35b_a3b cards_per_agent_server=1 | NVIDIA H100 NVL 93 GiB | 0 | 1 | weights 64.69 + KV cache 16.06 GiB, concurrency 6.23x | - | `sample-24da51117512` | `sample-24da51117512` "(EngineCore pid=3264492) ValueError: max_num_seqs (1024) exceeds available Mamba cache blocks (797). Each decode sequence requires one Mamba cache block, so CUDA graph capture cannot proceed. Please lower max_num_seqs to at most 797 or increase gpu_memory_utilization." |
 | train | debug=True models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 1 | 0 | peak 12.6 GiB | 92.4 step/h | `train-4a9594541c2d` | - |
 | train | debug=False models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 1 | 0 | peak 17.58 GiB | 1578.6 step/h | `train-29715d50906f` | - |
