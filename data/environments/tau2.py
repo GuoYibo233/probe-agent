@@ -18,10 +18,13 @@ from data.environments import Environment, StepObservation
 # The part of the developer message that is ours: tau2's own agent prompt (its AGENT_INSTRUCTION
 # and the domain policy, in its SYSTEM_PROMPT) comes first, word for word, and this text follows
 # it, because the official agent hands its tools to the model through the API's function calling
-# while this loop reads tool calls out of the reply text. {tools} is replaced by the domain's tool
-# schemas, one JSON object per tool, the way BFCL's prompting mode lists its functions.
+# while this loop reads tool calls out of the reply text. The format sentence is BFCL's
+# prompting-mode one (its "classic" style) for a single call, and {tools} is replaced by the
+# domain's tool schemas, one JSON object per tool, the way BFCL's prompting mode lists its
+# functions; a debug run whose wording lacked "you MUST" got the Qwen agent's native
+# <tool_call> markup instead.
 INSTRUCTIONS = {"v1": """<tool_call_format>
-To make a tool call, reply with the call alone: the tool's name, then its arguments in parentheses, each given by its parameter name, each value a JSON value (a string in double quotes, a number, true, false, null, a list or an object). For example, a tool named get_weather with the parameters city and days is called as get_weather(city="Paris", days=3). A reply that is anything else is sent to the user as your message, so a reply is either one tool call or one message, never both.
+If you decide to make a tool call, you MUST put it in the format of func_name(params_name1=params_value1, params_name2=params_value2...), where each value is a JSON value (a string in double quotes, a number, true, false, null, a list or an object), and you SHOULD NOT include any other text in that reply. For example, a tool named get_weather with the parameters city and days is called as get_weather(city="Paris", days=3). Do not use any other tool-call format. A reply that is not a tool call in this format is sent to the user as your message.
 The result of a tool call comes back to you as a list of {'role': 'tool', 'name': <the call>, 'content': <its output>}.
 </tool_call_format>
 <tools>
