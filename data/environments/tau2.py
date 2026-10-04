@@ -21,7 +21,7 @@ from data.environments import Environment, StepObservation
 # while this loop reads tool calls out of the reply text. {tools} is replaced by the domain's tool
 # schemas, one JSON object per tool, the way BFCL's prompting mode lists its functions.
 INSTRUCTIONS = {"v1": """<tool_call_format>
-To make a tool call, reply with the call alone, written as tool_name(argument_name=value, ...), where each value is a JSON value: a string in double quotes, a number, true, false, null, a list or an object. A reply that is anything else is sent to the user as your message, so a reply is either one tool call or one message, never both.
+To make a tool call, reply with the call alone: the tool's name, then its arguments in parentheses, each given by its parameter name, each value a JSON value (a string in double quotes, a number, true, false, null, a list or an object). For example, a tool named get_weather with the parameters city and days is called as get_weather(city="Paris", days=3). A reply that is anything else is sent to the user as your message, so a reply is either one tool call or one message, never both.
 The result of a tool call comes back to you as a list of {'role': 'tool', 'name': <the call>, 'content': <its output>}.
 </tool_call_format>
 <tools>
@@ -38,6 +38,10 @@ DOMAINS = ("airline", "retail", "telecom")
 # The name this module registers its agent under in tau2's registry: the agent that returns the
 # loop's reply as its own message.
 AGENT_NAME = "new1_loop_agent"
+# The name of tau2's user simulator as registered here (VisibleReplyUserSimulator in _load), and
+# the tag that closes a reasoning model's thinking in a reply text.
+USER_NAME = "new1_visible_reply_user_simulator"
+THINK_END = "</think>"
 # tau2's user simulator talks to the agent model's own server through litellm's OpenAI-compatible
 # provider; the temperature is tau2's own default for the user (DEFAULT_LLM_TEMPERATURE_USER).
 USER_PROVIDER = "openai"
@@ -200,6 +204,7 @@ def _load(data_root: str) -> SimpleNamespace:
     from tau2.orchestrator.orchestrator import Role
     from tau2.registry import registry
     from tau2.runner.build import _build_env_kwargs, build_text_orchestrator
+    from tau2.user.user_simulator import UserSimulator
     from tau2.utils.utils import get_now
 
     class LoopAgent(HalfDuplexAgent):
@@ -226,8 +231,25 @@ def _load(data_root: str) -> SimpleNamespace:
         del kwargs
         return LoopAgent(tools, domain_policy)
 
+    class VisibleReplyUserSimulator(UserSimulator):
+        """tau2's user simulator, whose message is the text after the model's closing think tag.
+
+        A reasoning model served without a reasoning parser (the Qwen rows) returns its thinking
+        and its answer as one text, and the thinking quotes the user's hidden scenario; the
+        message the agent reads is the answer alone, as a model served with a parser (gpt-oss)
+        already returns it.
+        """
+
+        def _generate_next_message(self, message, state):
+            user_message = super()._generate_next_message(message, state)
+            if user_message.content is not None and THINK_END in user_message.content:
+                user_message.content = user_message.content.rsplit(THINK_END, 1)[1].strip()
+            return user_message
+
     if registry.get_agent_factory(AGENT_NAME) is None:
         registry.register_agent_factory(loop_agent_factory, AGENT_NAME)
+    if USER_NAME not in registry.get_users():
+        registry.register_user(VisibleReplyUserSimulator, USER_NAME)
 
     _TAU2["t"] = SimpleNamespace(
         AGENT_INSTRUCTION=AGENT_INSTRUCTION, SYSTEM_PROMPT=SYSTEM_PROMPT,
@@ -247,8 +269,11 @@ class Tau2(Environment):
 
     NAME = "tau2"
     INSTRUCTIONS = INSTRUCTIONS
-    # Every reply is a tool call or a message to the user, so no reply goes without an action.
-    NO_CODE_MESSAGE = "Reply with one tool call or one message to the user."
+    # What the agent model is told after a reply this loop could not read (an empty reply, or a
+    # call whose arguments are not named JSON values); the conversation does not move.
+    NO_CODE_MESSAGE = ("That reply was not read. A tool call is the call alone, written as tool_name(parameter=value, ...) "
+                       "with every argument given by its parameter name and every value a JSON value; any other reply "
+                       "is a message to the user. Reply with one tool call or one message to the user.")
     RESULT_CAP = 500000
     # The domain's world takes no seed: it is its database file; the user simulator, the one
     # sampled party, takes the loop's seed through tau2's Orchestrator(seed=...).
@@ -347,7 +372,7 @@ class Tau2(Environment):
             raise ValueError(f"tau2.open: domain {domain!r} holds no task with id {tau2_id!r}")
         task = copy.deepcopy(self._tasks_by_domain[domain][tau2_id])
         config = t.TextRunConfig(
-            domain=domain, agent=AGENT_NAME, user="user_simulator",
+            domain=domain, agent=AGENT_NAME, user=USER_NAME,
             llm_user=f"{USER_PROVIDER}/{self._served_model_name}",
             llm_args_user={"temperature": USER_TEMPERATURE, "api_base": self._base_url, "api_key": "EMPTY"},
         )
@@ -395,11 +420,12 @@ class Tau2(Environment):
         orch = self._orch
         source = _unfenced(reply_text)
         calls = _calls(source)
+        # A reply the text protocol cannot read reaches neither the user nor the world: like
+        # AppWorld's reply without a code block, it gets NO_CODE_MESSAGE (action None) and the
+        # agent's turn is asked again; the official agent, whose calls come out of the API's
+        # function calling, has no such reply.
         if source == "":
-            # An empty turn is tau2's communication error: the conversation ends, the agent's fault.
-            orch.done = True
-            orch.termination_reason = t.TerminationReason.AGENT_ERROR
-            return StepObservation("", "", "empty_reply", True)
+            return StepObservation(None, "", "empty_reply", False)
         if calls is None:
             message = t.AssistantMessage(role="assistant", content=source)
             calls_text: list[str] = []
@@ -410,13 +436,8 @@ class Tau2(Environment):
                                arguments=_tool_call_arguments(c), requestor="assistant")
                     for k, c in enumerate(calls)
                 ]
-            except (ValueError, SyntaxError) as exc:
-                # The official agent's call with arguments that are not JSON fails inside tau2's
-                # generate(); here the conversation ends the same way, as the agent's error.
-                orch.done = True
-                orch.termination_reason = t.TerminationReason.AGENT_ERROR
-                return StepObservation(source, f"Error: the call's arguments are not JSON values: {exc}",
-                                       "malformed_call", True)
+            except (ValueError, SyntaxError):
+                return StepObservation(None, "", "malformed_call", False)
             message = t.AssistantMessage(role="assistant", content=None, tool_calls=tool_calls)
             calls_text = [ast.get_source_segment(source, c) for c in calls]
 
