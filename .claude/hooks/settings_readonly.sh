@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# PreToolUse hook: refuses any agent edit to experimental_settings/*.yaml and
-# to models/table.yaml, the owner's files (contracts 5.1, 6.1).
+# PreToolUse hook: refuses any agent edit to a YAML file under
+# experimental_settings/ outside its draft directory and to models/table.yaml,
+# the owner's files (contracts 5.1, 6.1). The setting files under
+# experimental_settings/draft/ are the agents' to write (gyb, 2026-10-02 and
+# 2026-10-04).
 #
 # The Bash branch leans toward catching writes (gyb, 2026-09-24, ruling 16): a
 # command whose text mentions a protected path together with a write word or
@@ -8,13 +11,17 @@
 # command does. Read-only commands of that shape are refused too
 # (`grep x experimental_settings/a.yaml > /tmp/out`,
 # `python -c "yaml.safe_load(open('experimental_settings/x.yaml'))"`), and that
-# is accepted.
+# is accepted. A mention counts as a draft file only when it is a plain path
+# under experimental_settings/draft/ (word characters, dots and hyphens, no ".."
+# segment), so a glob, a brace expansion or a climb out of the draft directory
+# is still protected.
 set -uo pipefail
 
 payload="$(cat)"
 
 exec python3 - "$payload" << 'PYEOF'
 import json
+import os
 import re
 import sys
 
@@ -23,15 +30,18 @@ payload = sys.argv[1]
 REFUSAL = (
     "experimental_settings/*.yaml and models/table.yaml are the owner's files: "
     "an agent never edits them (contracts 5.1, 6.1). Propose the change as a "
-    "task instead."
+    "task instead, or write the setting under experimental_settings/draft/, "
+    "which agents may write."
 )
 
-PROTECTED_TAIL_RE = re.compile(
-    r"(^|/)experimental_settings/[^/]+\.ya?ml$|(^|/)models/table\.yaml$"
-)
+MODEL_TABLE_TAIL_RE = re.compile(r"(^|/)models/table\.yaml$")
+SETTINGS_TAIL_RE = re.compile(r"(^|/)(experimental_settings/.+\.ya?ml)$")
 
-PROTECTED_MENTION_RE = re.compile(
-    r"experimental_settings/[^\s\"']*\.ya?ml|models/table\.yaml"
+MODEL_TABLE_MENTION_RE = re.compile(r"models/table\.yaml")
+SETTINGS_MENTION_RE = re.compile(r"experimental_settings/[^\s\"']*\.ya?ml")
+
+DRAFT_SETTING_RE = re.compile(
+    r"experimental_settings/draft/(?:[\w.-]+/)*[\w.-]+\.ya?ml"
 )
 
 # Plain substrings, matched anywhere in the command text.
@@ -59,10 +69,33 @@ BASH_WRITE_MARKERS = tuple(
 ) + tuple(re.compile(p) for p in BASH_WRITE_PATTERNS)
 
 
+def is_draft_setting(mention):
+    """True when the mention is a plain path of a setting file in the draft directory."""
+    return (
+        DRAFT_SETTING_RE.fullmatch(mention) is not None
+        and ".." not in mention.split("/")
+    )
+
+
 def is_protected(path):
+    """True when the path names models/table.yaml or a setting file outside the draft directory."""
     if not path:
         return False
-    return PROTECTED_TAIL_RE.search(path) is not None
+    normal = os.path.normpath(path)
+    if MODEL_TABLE_TAIL_RE.search(normal) is not None:
+        return True
+    match = SETTINGS_TAIL_RE.search(normal)
+    return match is not None and not is_draft_setting(match.group(2))
+
+
+def mentions_protected(command):
+    """True when the command text names models/table.yaml or a setting file outside the draft directory."""
+    if MODEL_TABLE_MENTION_RE.search(command) is not None:
+        return True
+    return any(
+        not is_draft_setting(mention)
+        for mention in SETTINGS_MENTION_RE.findall(command)
+    )
 
 
 def block():
@@ -97,11 +130,10 @@ if tool_name == "NotebookEdit":
 
 if tool_name == "Bash":
     command = tool_input.get("command", "") or ""
-    mentions_protected = PROTECTED_MENTION_RE.search(command) is not None
     has_write_marker = any(
         marker.search(command) is not None for marker in BASH_WRITE_MARKERS
     )
-    if mentions_protected and has_write_marker:
+    if mentions_protected(command) and has_write_marker:
         block()
     allow()
 

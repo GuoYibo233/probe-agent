@@ -145,7 +145,19 @@ four.
 A hook refuses an agent edit to `experimental_settings/*.yaml` and to
 `models/table.yaml`: both change what a setting produces, so both are the
 owner's files, and an agent proposes a change to either as a task instead of
-editing it. The hook also refuses any Bash command whose text carries one of
+editing it.
+
+The one exception is `experimental_settings/draft/` (gyb, 2026-10-02 and
+2026-10-04): an agent writes and edits setting files there without asking,
+and `run.py` reads them as the workflow `draft/<file stem>` (for example
+`run.py draft/full_history <setting>`, or a reference
+`draft/full_history/<setting>`). When gyb allows an experiment, the agent
+puts its setting in the draft directory and launches it itself through the
+gpu-run skill, with no top-level setting edit from gyb. The hook lets a
+plain path under the draft directory through; a glob, a brace expansion or a
+`..` climb out of it is still refused.
+
+The hook also refuses any Bash command whose text carries one of
 these files' names together with a write word (a redirect, `tee`, `cp`,
 `mv`, `sed -i`, ...), so writing `CLAUDE.md` itself is always done with the
 Write tool, never with a Bash heredoc — a heredoc into `CLAUDE.md` is refused

@@ -129,7 +129,7 @@ constants/path_outputs.yaml — the outputs root on NFS, the debug subdirectory 
 constants/path_models.yaml — weights alias -> the directory the weights live in.
   read by: models/__init__.py, models/agent_models/service.py (the weights path of the row it serves)
 
-### experimental_settings/ — everything in here changes a result; the owner's files, never edited by an agent
+### experimental_settings/ — everything in here changes a result; the owner's files, never edited by an agent, except the draft directory, which agents write
 
 experimental_settings/schema.py — the setting schema: the dataclasses, the stage table, and the loader that reads a YAML file against them (file -> setting, diff, key).
   imports: none (repo); [PyYAML, ast, collections.abc, dataclasses, hashlib, itertools, json, pathlib, re, typing]
@@ -148,6 +148,9 @@ experimental_settings/train_probe.yaml — workflow sample, build, train, eval; 
   read by: experimental_settings/schema.py only
 
 experimental_settings/inject.yaml — workflow inject, score; named settings inside.
+  read by: experimental_settings/schema.py only
+
+experimental_settings/draft/ — workflow files agents write without asking the owner (2026-10-02, 2026-10-04); each names its own stage list and settings, and run.py takes one as the workflow draft/<file stem>.
   read by: experimental_settings/schema.py only
 
 ### data/ — the benchmark environments, and every format that lives on disk between two stages
