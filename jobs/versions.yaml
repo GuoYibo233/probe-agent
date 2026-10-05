@@ -411,3 +411,69 @@
   why: Since 3a4a301 probe_eval gained the fired-row reader a generator's train run calls and holds the
     prediction-file columns row by row; a classifier eval over a non-empty prediction file, such as 4319ab69d9c3,
     writes the same report and fired rows
+- stage: sample
+  era: 2
+  from: b62ced71197141712695ffc86c76e29766f3e657
+  same: 14a3db729ae8d730eaba1d378ab417c0bacebc8b
+  date: 2026-10-06
+  why: 'Since b62ced7 the stage''s AppWorld files changed only in ways an AppWorld run never takes: the
+    environment contract''s instructions() and bind_agent() defaults (INSTRUCTIONS[variant] as it stands,
+    nothing kept), the loop handing the endpoint and family module once and guarding the environment''s
+    own calls as service calls, the record reader reading a jsonl file''s bytes, and each agent family''s
+    CHAT_NO_THINKING and visible_chat_text, which only tau2''s simulated customer reads; an AppWorld run''s
+    output is unchanged'
+- stage: inject
+  era: 4
+  from: b62ced71197141712695ffc86c76e29766f3e657
+  same: 14a3db729ae8d730eaba1d378ab417c0bacebc8b
+  date: 2026-10-06
+  why: 'Since b62ced7 the stage''s AppWorld files changed only in ways an AppWorld run never takes: the
+    environment contract''s instructions() and bind_agent() defaults (INSTRUCTIONS[variant] as it stands,
+    nothing kept), the loop handing the endpoint and family module once and guarding the environment''s
+    own calls as service calls, the record reader reading a jsonl file''s bytes, and each agent family''s
+    CHAT_NO_THINKING and visible_chat_text, which only tau2''s simulated customer reads; an AppWorld run''s
+    output is unchanged'
+- stage: build
+  era: 4
+  from: b62ced71197141712695ffc86c76e29766f3e657
+  same: 14a3db729ae8d730eaba1d378ab417c0bacebc8b
+  date: 2026-10-06
+  why: 'Since b62ced7 the stage''s AppWorld files changed only in ways an AppWorld run never takes: the
+    environment contract''s instructions() and bind_agent() defaults (INSTRUCTIONS[variant] as it stands,
+    nothing kept), the loop handing the endpoint and family module once and guarding the environment''s
+    own calls as service calls, the record reader reading a jsonl file''s bytes, and each agent family''s
+    CHAT_NO_THINKING and visible_chat_text, which only tau2''s simulated customer reads; an AppWorld run''s
+    output is unchanged'
+- stage: train
+  era: 2
+  from: b62ced71197141712695ffc86c76e29766f3e657
+  same: 14a3db729ae8d730eaba1d378ab417c0bacebc8b
+  date: 2026-10-06
+  why: 'Since b62ced7 the stage''s AppWorld files changed only in ways an AppWorld run never takes: the
+    environment contract''s instructions() and bind_agent() defaults (INSTRUCTIONS[variant] as it stands,
+    nothing kept), the loop handing the endpoint and family module once and guarding the environment''s
+    own calls as service calls, the record reader reading a jsonl file''s bytes, and each agent family''s
+    CHAT_NO_THINKING and visible_chat_text, which only tau2''s simulated customer reads; an AppWorld run''s
+    output is unchanged'
+- stage: eval
+  era: 2
+  from: b62ced71197141712695ffc86c76e29766f3e657
+  same: 14a3db729ae8d730eaba1d378ab417c0bacebc8b
+  date: 2026-10-06
+  why: 'Since b62ced7 the stage''s AppWorld files changed only in ways an AppWorld run never takes: the
+    environment contract''s instructions() and bind_agent() defaults (INSTRUCTIONS[variant] as it stands,
+    nothing kept), the loop handing the endpoint and family module once and guarding the environment''s
+    own calls as service calls, the record reader reading a jsonl file''s bytes, and each agent family''s
+    CHAT_NO_THINKING and visible_chat_text, which only tau2''s simulated customer reads; an AppWorld run''s
+    output is unchanged'
+- stage: score
+  era: 1
+  from: b62ced71197141712695ffc86c76e29766f3e657
+  same: 14a3db729ae8d730eaba1d378ab417c0bacebc8b
+  date: 2026-10-06
+  why: 'Since b62ced7 the stage''s AppWorld files changed only in ways an AppWorld run never takes: the
+    environment contract''s instructions() and bind_agent() defaults (INSTRUCTIONS[variant] as it stands,
+    nothing kept), the loop handing the endpoint and family module once and guarding the environment''s
+    own calls as service calls, the record reader reading a jsonl file''s bytes, and each agent family''s
+    CHAT_NO_THINKING and visible_chat_text, which only tau2''s simulated customer reads; an AppWorld run''s
+    output is unchanged'
