@@ -208,7 +208,7 @@ class ContractDefaultsTest(unittest.TestCase):
         env = open_env("appworld")
         for variant in env.INSTRUCTIONS:
             self.assertEqual(env.instructions(variant), env.INSTRUCTIONS[variant])
-        self.assertIsNone(env.bind_agent("http://h:1/v1", "m"))
+        self.assertIsNone(env.bind_agent("http://h:1/v1", "m", None))
 
     def test_the_new_benchmarks_hold_the_contract(self):
         for name in ("tau2", "bfcl"):
@@ -291,14 +291,21 @@ class Tau2CallSyntaxTest(unittest.TestCase):
         calls_source, _, start = tau2_module._reply_calls(mixed)
         self.assertEqual(tau2_module._message_text_before_calls(mixed, source, calls_source, start), "Let me check.")
 
-    def test_the_user_simulators_visible_text(self):
-        """The agent reads what follows a closing think tag, nothing from an unclosed one (the
-        thinking quotes the hidden scenario), and the whole text when there is no tag."""
-        from data.environments import tau2 as tau2_module
-        self.assertEqual(tau2_module._visible_text("<think>the scenario says X</think>\n\nHi, my phone broke."),
+    def test_the_user_simulators_visible_text_comes_from_the_family(self):
+        """The customer's message is what the agent family says a chat reply shows: for the
+        Qwen3 family what follows a closing think tag, nothing from an unclosed one (the thinking
+        quotes the hidden scenario), the whole text when there is no tag; for gpt-oss, whose
+        server returns the final channel apart, the content as it stands. Each family also names
+        the request fields that turn thinking off."""
+        from models.agent_models import gptoss, qwen3
+        self.assertEqual(qwen3.visible_chat_text("<think>the scenario says X</think>\n\nHi, my phone broke."),
                          "Hi, my phone broke.")
-        self.assertEqual(tau2_module._visible_text("<think>the scenario says X and"), "")
-        self.assertEqual(tau2_module._visible_text("Hi, my phone broke."), "Hi, my phone broke.")
+        self.assertEqual(qwen3.visible_chat_text("<think>the scenario says X and"), "")
+        self.assertEqual(qwen3.visible_chat_text("Hi, my phone broke."), "Hi, my phone broke.")
+        self.assertEqual(gptoss.visible_chat_text("  Hi, my phone broke.\n"), "Hi, my phone broke.")
+        self.assertEqual(gptoss.visible_chat_text(None), "")
+        self.assertEqual(qwen3.CHAT_NO_THINKING, {"chat_template_kwargs": {"enable_thinking": False}})
+        self.assertEqual(gptoss.CHAT_NO_THINKING, {"reasoning_effort": "low"})
 
 
 class BFCLCallSyntaxTest(unittest.TestCase):

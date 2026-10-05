@@ -10,6 +10,11 @@ EFFORTS = ("high", "medium", "low")       # 5.3 validates generation.effort agai
 DEFAULT_EFFORT = "high"
 DEFAULT_DATE = "2026-08-06"
 END_IDS = (200002, 200012)                # <|return|>, <|call|>
+# The extra fields of a /v1/chat/completions request asking for a reply with the least thinking
+# the family allows: harmony has no switch that turns reasoning off and vLLM refuses "none", so
+# the lowest tier. A benchmark's simulated party and judge ask the agent server this way
+# (data/environments/tau2.py).
+CHAT_NO_THINKING = {"reasoning_effort": "low"}
 
 _END_MARK = "<|end|>"
 _ROLE = {"system", "developer", "user", "assistant"}
@@ -103,6 +108,11 @@ def chat_request(messages: list[dict], effort: str | None, date: str | None) -> 
     """The fields of a /v1/chat/completions request under which the server renders the ids render_ids does: the messages as they are and the reasoning effort (the server takes the date from VLLM_SYSTEM_START_DATE, which build_command sets)."""
     del date
     return {"messages": messages, "reasoning_effort": effort}
+
+
+def visible_chat_text(content: str | None) -> str:
+    """The text a /v1/chat/completions reply shows its reader: vLLM's harmony path returns the final channel as the content and the analysis channel apart, so the content as it stands."""
+    return (content or "").strip()
 
 
 def parse(text_delta: str, state: dict) -> dict:

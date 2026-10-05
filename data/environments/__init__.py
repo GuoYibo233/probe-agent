@@ -74,14 +74,16 @@ class Environment:
         """
         return self.INSTRUCTIONS[variant]
 
-    def bind_agent(self, base_url: str, served_model_name: str) -> None:
-        """Take the OpenAI-compatible endpoint of the agent model's server, before the first open.
+    def bind_agent(self, base_url: str, served_model_name: str, family) -> None:
+        """Take the OpenAI-compatible endpoint of the agent model's server and the model's family module (models/agent_models/<family>.py), before the first open.
 
-        A benchmark that simulates the other party of a conversation (tau2's customer) keeps it
-        and asks that server for the other party's turns; a benchmark whose tasks hold no
-        simulated party has no use for it.
+        A benchmark that simulates the other party of a conversation (tau2's customer) keeps
+        them and asks that server for the other party's turns, with the request fields the
+        family names to turn thinking off (CHAT_NO_THINKING) and reading the reply through the
+        family's visible_chat_text; a benchmark whose tasks hold no simulated party has no use
+        for them.
         """
-        del base_url, served_model_name
+        del base_url, served_model_name, family
 
 
 def open_env(name: str, *, result_cap: int | None = None) -> Environment:

@@ -1533,6 +1533,11 @@ def _check_3() -> list[str]:
 
 
 _CODE_LAYERS = ("data/", "models/", "agent/", "train/", "eval/")
+# The functions the code calls on an agent-model family module: models/__init__.py binds its
+# weights, the probe and agent services render and check through it, the loop parses and wraps
+# with it, and tau2's simulated customer reads its chat replies through it.
+AGENT_FAMILY_FUNCTIONS = ("bind_weights", "render_ids", "chat_request", "parse", "wrap_prefetch",
+                          "visible_chat_text")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{7,40}$")
 
@@ -1675,8 +1680,15 @@ def _check_4() -> list[str]:
         _safe_literal(problems, "check 4", path, "CHECKPOINT_META")
     for fam in _families("agent"):
         path = f"models/agent_models/{fam}.py"
-        for name in ("STOP", "EFFORTS", "DEFAULT_EFFORT", "DEFAULT_DATE"):
+        for name in ("STOP", "EFFORTS", "DEFAULT_EFFORT", "DEFAULT_DATE", "CHAT_NO_THINKING"):
             _safe_literal(problems, "check 4", path, name)
+        tree = _safe_parse(problems, "check 4", path)
+        if tree is not None:
+            defined = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+            for name in AGENT_FAMILY_FUNCTIONS:
+                if name not in defined:
+                    problems.append(f"check 4: {path} defines no column-zero {name}(), which the code "
+                                    "calls on every agent-model family")
     for fam in _families("probe"):
         path = f"models/probe_models/{fam}.py"
         _safe_literal(problems, "check 4", path, "LORA_TARGETS")

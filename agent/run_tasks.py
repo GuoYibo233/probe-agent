@@ -11,6 +11,7 @@ import time
 import urllib.error
 from pathlib import Path
 
+import models
 from data.environments import open_env, requested_pairs
 from data.trajectory_record import done_pairs, open_record, to_messages
 from experimental_settings import schema
@@ -107,7 +108,8 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
     )
     # The same replica's endpoint, for a benchmark that simulates the other party of the
     # conversation with the agent model (tau2's customer).
-    env.bind_agent(agent_doc["base_url"], cfg.models.agent_row["served_model_name"])
+    env.bind_agent(agent_doc["base_url"], cfg.models.agent_row["served_model_name"],
+                   models.agent(cfg.models.agent).module)
 
     health = clients.probe.health()
     if health.get("render") != "ids":

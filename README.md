@@ -162,7 +162,7 @@ data/__init__.py — the conventions the three on-disk formats share: read_frame
   writes:  -
   venv:    any
 
-data/environments/__init__.py — the environment contract every benchmark implements (with its two defaults: the open task's developer message is INSTRUCTIONS[variant] as it stands, and the agent server's endpoint is kept by a benchmark that simulates the other party of a conversation and by no other), the loader that finds and instantiates one by name (and puts generation.result_cap in place of the module's own reply cap when the setting names one), and the one rule for which (task, seed) pairs a run requests.
+data/environments/__init__.py — the environment contract every benchmark implements (with its two defaults: the open task's developer message is INSTRUCTIONS[variant] as it stands, and the agent server's endpoint and the agent family module are kept by a benchmark that simulates the other party of a conversation and by no other), the loader that finds and instantiates one by name (and puts generation.result_cap in place of the module's own reply cap when the setting names one), and the one rule for which (task, seed) pairs a run requests.
   imports: none (repo); [importlib, PyYAML]
   used by: data/environments/{appworld,tau2,bfcl}.py (subclass), agent/run_tasks.py (open_env, StepObservation, requested_pairs), agent/step_with_probe.py, data/build_training_dataset.py, train/methods/cgen.py, train/methods/cparam.py, eval/utils/probe_eval.py, eval/score_run.py, jobs/launch.py, run.py
   reads:   constants/path_datasets.yaml
@@ -229,7 +229,7 @@ data/build_training_dataset.py — the program: records -> example rows for the 
 
 models/__init__.py — the entrance to models/table.yaml: agent(alias) and probe(alias) resolve a row into its family module (agent only, handed the row's weights directory through its bind_weights), weights alias, weights path and serving block.
   imports: none (repo); [importlib, PyYAML]
-  used by: agent/step_without_probe.py, agent/step_with_probe.py, models/agent_models/service.py, models/probe_models/base.py, models/probe_models/service.py, train/utils/trainer.py
+  used by: agent/run_tasks.py (the family module it hands the environment), agent/step_without_probe.py, agent/step_with_probe.py, models/agent_models/service.py, models/probe_models/base.py, models/probe_models/service.py, train/utils/trainer.py
   reads:   models/table.yaml, constants/path_models.yaml
   writes:  -
   venv:    any
@@ -244,14 +244,14 @@ models/agent_models/__init__.py — empty package marker, so the client half of 
   writes:  -
   venv:    any
 
-models/agent_models/gptoss.py — gpt-oss's harmony conversation format: render messages to token ids, parse a streamed reply, end of turn, and the control-token wrapping of a prefetch message.
+models/agent_models/gptoss.py — gpt-oss's harmony conversation format: render messages to token ids, parse a streamed reply, end of turn, and the control-token wrapping of a prefetch message; for a chat request the lowest reasoning tier (CHAT_NO_THINKING, harmony has no off switch) and the reply's visible text, its content as vLLM returns it.
   imports: none (repo); [openai_harmony, inside render_ids()]
   used by: models/__init__.py (by name); every other file reaches this module as the object models/__init__.py's agent(alias) returns
   reads:   -
   writes:  -
   venv:    any at import and for parse/end_of_turn/wrap_prefetch; probe or vllm for render_ids()
 
-models/agent_models/qwen3.py — Qwen3-generation chat models' ChatML format with <think> reasoning: render messages to token ids through the model's own chat template (the date as the system message's first line), parse a streamed reply, end of turn, and the ChatML wrapping of a prefetch message.
+models/agent_models/qwen3.py — Qwen3-generation chat models' ChatML format with <think> reasoning: render messages to token ids through the model's own chat template (the date as the system message's first line), parse a streamed reply, end of turn, and the ChatML wrapping of a prefetch message; for a chat request the template's switch that turns thinking off (CHAT_NO_THINKING) and the reply's visible text, what follows its closing think tag.
   imports: none (repo); [transformers, inside render_ids()]
   used by: models/__init__.py (by name); every other file reaches this module as the object models/__init__.py's agent(alias) returns
   reads:   the bound weights directory's tokenizer files (the chat template, and tokenizer_config.json for the end-of-turn ids)
@@ -295,8 +295,8 @@ models/probe_models/service.py — both ends of the probe service: the HTTP serv
 
 ### agent/ — the loop that runs the agent model on tasks
 
-agent/run_tasks.py — run each task and seed of a piece's rotation to completion, claiming tasks across pieces and writing the record; it hands the environment the agent server's endpoint once, and takes each task's developer message from the open environment; a service that stops answering, also inside the environment's own open, step or judge (tau2's customer and judge), ends the piece and leaves the task's record unfinished for the next launch.
-  imports: experimental_settings/schema.py (load_frozen), data/environments/__init__.py, data/trajectory_record.py, models/agent_models/service.py (client), models/probe_models/service.py (client, for render), agent/step_without_probe.py, agent/step_with_probe.py, jobs/registry.py, jobs/launch.py (teardown_services)
+agent/run_tasks.py — run each task and seed of a piece's rotation to completion, claiming tasks across pieces and writing the record; it hands the environment the agent server's endpoint and the agent model's family module once, and takes each task's developer message from the open environment; a service that stops answering, also inside the environment's own open, step or judge (tau2's customer and judge), ends the piece and leaves the task's record unfinished for the next launch.
+  imports: experimental_settings/schema.py (load_frozen), data/environments/__init__.py, data/trajectory_record.py, models/__init__.py (the agent family module), models/agent_models/service.py (client), models/probe_models/service.py (client, for render), agent/step_without_probe.py, agent/step_with_probe.py, jobs/registry.py, jobs/launch.py (teardown_services)
   used by: none (program)
   reads:   its run directory's settings.yaml, the environment's split task-id files (through data/environments.requested_pairs), the service_agent_<replica>.json / service_probe_0.json endpoint files in its own run directory; after its walk, the last line of every requested record (done_pairs) and, through jobs/launch.teardown_services, its run directory's meta.json and the open runs' service_<kind>_<replica>.json
   writes:  task records (jsonl), heartbeat; ends its run's service pieces (through jobs/launch.teardown_services) once every requested record is finished
@@ -475,12 +475,19 @@ row is written without waiting for the gate.
    (one row); `constants/path_models.yaml` (one row). Cost: `base.py` holds everything the
    backbones share.
 7. **A new agent-model family.** `models/agent_models/<family>.py` (new, carrying column-zero
-   `STOP`, `EFFORTS`, `DEFAULT_EFFORT` and `DEFAULT_DATE`; the stage table's `{family}`
+   `STOP`, `EFFORTS`, `DEFAULT_EFFORT`, `DEFAULT_DATE` and `CHAT_NO_THINKING`, and the functions
+   `bind_weights`, `render_ids`, `chat_request`, `parse`, `wrap_prefetch` and
+   `visible_chat_text`, all of which `selfcheck` check 4 requires; `CHAT_NO_THINKING` and
+   `visible_chat_text` are how tau2's simulated customer and judge ask the family's server for a
+   reply without thinking and read what the reply shows; the stage table's `{family}`
    template names it); `models/table.yaml`
    (one row); `constants/path_models.yaml` (one row); `experimental_settings/schema.py` (one
    value on `generation.effort` for each reasoning tier the new family has that no existing
    family has); plus the family's rendering library installed in the probe venv and the vllm
-   venv, which `selfcheck` proves by importing the module under both interpreters.
+   venv, which `selfcheck` proves by importing the module under both interpreters. A row whose
+   model runs tau2's telecom domain also starts its server with vLLM's tool-call parser for the
+   family (`--enable-auto-tool-choice --tool-call-parser <parser>` in `extra_flags`), because the
+   telecom customer calls its tools through the chat API.
 
 Two changes that are not extensions but deserve the same treatment:
 

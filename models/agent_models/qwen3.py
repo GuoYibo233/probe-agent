@@ -11,6 +11,11 @@ STOP = ["<|im_end|>"]                     # 5.2's default of generation.stop
 EFFORTS = ()                              # no reasoning tiers: 5.3 refuses any generation.effort value
 DEFAULT_EFFORT = None
 DEFAULT_DATE = "2026-08-06"
+# The extra fields of a /v1/chat/completions request asking for a reply with no thinking: every
+# Qwen3-generation chat template reads this switch and then writes an empty think block (checked
+# on Qwen3.6-35B-A3B and Qwen3.8-27B). A benchmark's simulated party and judge ask the agent
+# server this way (data/environments/tau2.py).
+CHAT_NO_THINKING = {"chat_template_kwargs": {"enable_thinking": False}}
 
 # The two tokens that close a turn. Their ids differ between generations (Qwen3: 151645 and
 # 151643; Qwen3.5: 248046 and 248044), so end_of_turn reads them from the bound weights'
@@ -98,6 +103,16 @@ def chat_request(messages: list[dict], effort: str | None, date: str | None) -> 
         raise ValueError("date is required: chat_request refuses an unpinned date")
     return {"messages": template_messages(messages, date),
             "chat_template_kwargs": {"enable_thinking": True}}
+
+
+def visible_chat_text(content: str | None) -> str:
+    """The text a /v1/chat/completions reply shows its reader: a server with no reasoning parser returns the thinking and the answer as one text, so what follows the last `</think>`; nothing when the thinking opened and never closed (a length cut), so no thinking reaches the reader; the whole text when it carries no think tag."""
+    text = content or ""
+    if "</think>" in text:
+        return text.rsplit("</think>", 1)[1].strip()
+    if "<think>" in text:
+        return ""
+    return text.strip()
 
 
 def _assistant_bodies(raw: str) -> list[str]:

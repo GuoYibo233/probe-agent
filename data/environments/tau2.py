@@ -44,11 +44,8 @@ DOMAINS = ("airline", "retail", "telecom")
 # The name this module registers its agent under in tau2's registry: the agent that returns the
 # loop's reply as its own message.
 AGENT_NAME = "new1_loop_agent"
-# The name of tau2's user simulator as registered here (VisibleReplyUserSimulator in _load), and
-# the tag that closes a reasoning model's thinking in a reply text.
+# The name of tau2's user simulator as registered here (VisibleReplyUserSimulator in _load).
 USER_NAME = "new1_visible_reply_user_simulator"
-THINK_START = "<think>"
-THINK_END = "</think>"
 # The server flags that make vLLM parse a model's tool calls out of a chat completion. tau2's
 # user simulator calls tools in the telecom domain alone (airline and retail users have none) and
 # sends them with tool_choice "auto": without the flags a Qwen server answers HTTP 400 naming them,
@@ -68,14 +65,14 @@ USER_TEMPERATURE = 0.0
 # (DEFAULT_LLM_NL_ASSERTIONS), a paid model; here it is the agent model on its own server at the
 # same temperature, asked for a JSON object because the evaluator reads the reply with json.loads.
 NL_JUDGE_TEMPERATURE = 0.0
-# tau2's user simulator and NL judge are non-reasoning chat models (gpt-4.1). On a reasoning
-# model both requests ask for no thinking where the serving format has a switch (enable_thinking
-# false, read by Qwen's chat templates) and for the lowest tier where it has none (reasoning_effort
-# low, gpt-oss, whose harmony format refuses "none"); each server ignores the field it does not
-# read. A Qwen3.6 customer that thought freely ran past litellm's 600 s timeout on one turn in a
-# 2026-10-05 debug run. Both fields ride in extra_body, which litellm sends as it is; given as
-# arguments of their own, litellm dropped reasoning_effort for a model name it does not know.
-NO_THINKING = {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}, "reasoning_effort": "low"}}
+# tau2's user simulator and NL judge are non-reasoning chat models (gpt-4.1). On the agent model's
+# server both requests ask for no thinking with the fields its family module names
+# (CHAT_NO_THINKING), and the user's message is the text the family says a reply shows
+# (visible_chat_text): how a model is asked not to think and how its thinking is marked belong to
+# its family, so a new family states both and this module names none. A Qwen3.6 customer that
+# thought freely ran past litellm's 600 s timeout on one turn in a 2026-10-05 debug run. The
+# fields ride in extra_body, which litellm sends as it is; given as arguments of their own,
+# litellm dropped reasoning_effort for a model name it does not know.
 # The tool that hands the conversation to a human agent. tau2 types it GENERIC, as it changes no
 # database, but no undo takes the hand-off back, so it is never tried early.
 HANDOFF_TOOL = "transfer_to_human_agents"
@@ -185,15 +182,6 @@ def _message_text_before_calls(raw: str, source: str, calls_source: str, start: 
     if calls_source == source:
         return None
     return raw[:start].strip() or None
-
-
-def _visible_text(content: str) -> str:
-    """The text a reasoning model's reply shows: what follows its closing think tag; nothing when the thinking opened and never closed (a length cut), so the thinking, which quotes the user's hidden scenario, never reaches the agent; the whole text when it has no think tag."""
-    if THINK_END in content:
-        return content.rsplit(THINK_END, 1)[1].strip()
-    if THINK_START in content:
-        return ""
-    return content
 
 
 def _value(node: ast.AST):
@@ -334,8 +322,9 @@ def _load(data_root: str) -> SimpleNamespace:
 
         A reasoning model served without a reasoning parser (the Qwen rows) returns its thinking
         and its answer as one text, and the thinking quotes the user's hidden scenario; the
-        message the agent reads is the answer alone (`_visible_text`), as a model served with a
-        parser (gpt-oss) already returns it. A turn with neither visible text nor a tool call is
+        message the agent reads is the answer alone (`visible_text`, the agent family's
+        visible_chat_text, set by Tau2.open), as a model served with a parser (gpt-oss) already
+        returns it. A turn with neither visible text nor a tool call is
         no message tau2 can deliver: on a domain whose user calls tools it is the server running
         without the tool-call flags (NO_USER_TURN, a service gone, the piece ends); elsewhere it
         is this task's own failure.
@@ -344,7 +333,7 @@ def _load(data_root: str) -> SimpleNamespace:
         def _generate_next_message(self, message, state):
             user_message = super()._generate_next_message(message, state)
             if user_message.content is not None:
-                user_message.content = _visible_text(user_message.content)
+                user_message.content = self.visible_text(user_message.content)
             if not user_message.content and not user_message.tool_calls:
                 if self.tools:
                     raise ConnectionError(NO_USER_TURN)
@@ -398,6 +387,7 @@ class Tau2(Environment):
             raise ValueError(f"tau2: constants/path_datasets.yaml data {self.data!r} is not <home>/data")
         self._base_url: str | None = None
         self._served_model_name: str | None = None
+        self._family = None
         self._tasks_by_domain: dict[str, dict] = {}
         self._orch = None
         self._task = None
@@ -448,9 +438,10 @@ class Tau2(Environment):
 
     # ---- the agent server, for the user simulator ----
 
-    def bind_agent(self, base_url: str, served_model_name: str) -> None:
+    def bind_agent(self, base_url: str, served_model_name: str, family) -> None:
         self._base_url = base_url
         self._served_model_name = served_model_name
+        self._family = family
 
     # ---- one conversation ----
 
@@ -480,14 +471,17 @@ class Tau2(Environment):
             domain=domain, agent=AGENT_NAME, user=USER_NAME,
             llm_user=f"{USER_PROVIDER}/{self._served_model_name}",
             llm_args_user={"temperature": USER_TEMPERATURE, "api_base": self._base_url, "api_key": "EMPTY",
-                           **copy.deepcopy(NO_THINKING)},
+                           "extra_body": copy.deepcopy(self._family.CHAT_NO_THINKING)},
         )
         # tau2's evaluator reads its judge from these two module names at every call.
         t.evaluator_nl_assertions.DEFAULT_LLM_NL_ASSERTIONS = f"{USER_PROVIDER}/{self._served_model_name}"
         t.evaluator_nl_assertions.DEFAULT_LLM_NL_ASSERTIONS_ARGS = {
             "temperature": NL_JUDGE_TEMPERATURE, "api_base": self._base_url, "api_key": "EMPTY",
-            "response_format": {"type": "json_object"}, **copy.deepcopy(NO_THINKING)}
+            "response_format": {"type": "json_object"},
+            "extra_body": copy.deepcopy(self._family.CHAT_NO_THINKING)}
         orch = t.build_text_orchestrator(config, task, seed=seed)
+        # The user's message is the text the agent model's family says a chat reply shows.
+        orch.user.visible_text = self._family.visible_chat_text
         self._orch, self._task, self._domain = orch, task, domain
         self._env_kwargs = t.build_env_kwargs(config, task)
         self._finalized = False
