@@ -3,12 +3,15 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `train-c7093d8c40b6` | 2026-10-06 01:09 | train | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `344b1ec` | launching | - | - |
+| `build-e2a3861d8053` | 2026-10-06 00:53 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `344b1ec` | ok | - | report.md |
+| `sample-62d6f3de27bf` | 2026-10-06 00:43 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `6a7c39b` | ok | - | - |
+| `train-e91e46ca9f01` | 2026-10-05 19:33 | train | draft/full_history/collection_2026_10_01_full_history_cgen_qwen3_0pt6b_full | `09d0580` | launching | - | - |
 | `eval-54f6b2d560ec` | 2026-10-05 18:57 | eval | draft/full_history/collection_2026_10_01_full_history_cgen_qwen3_0pt6b_full | `539c916` | ok | - | report.md |
 | `train-cd96d5598d1d` | 2026-10-05 18:52 | train | draft/full_history/collection_2026_10_01_full_history_cgen_qwen3_0pt6b_full | `050a8fa` | ok | objective=0.890625 val_ce=2.020143508911133 val_tool_ok=0.265625 val_params_all_ok=0.109375 val_full_call_ok=0.109375 gen_n=64 | - |
 | `eval-35bd2584af60` | 2026-10-05 18:51 | eval | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `050a8fa` | ok | - | report.md |
 | `build-beed9c8ab9b7` | 2026-10-05 18:48 | build | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `050a8fa` | ok | - | report.md |
 | `train-692042300dde` | 2026-10-05 18:48 | train | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `050a8fa` | ok | objective=0.5 val_wacc=0.5 val_lastcut_acc=0.375 | - |
-| `sample-62d6f3de27bf` | 2026-10-05 00:25 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `5d46d9a` | launching | - | - |
 | `eval-b1bf7058f11b` | 2026-10-04 22:18 | eval | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `47dae68` | ok | - | report.md |
 | `sample-24da51117512` | 2026-10-04 22:18 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `47dae68` | launch_failed | - | - |
 | `build-4d79f95a6903` | 2026-10-04 22:16 | build | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `47dae68` | ok | - | report.md |
@@ -446,10 +449,10 @@
 
 | stage | task | card | ok | failed for memory | memory | median speed | newest run | newest memory failure |
 |---|---|---|---|---|---|---|---|---|
+| sample | debug=False models.agent=qwen3pt6_35b_a3b cards_per_agent_server=1 | NVIDIA H100 NVL 93 GiB | 1 | 1 | weights 64.69 + KV cache 19.25 GiB, concurrency 7.46x | 13.1 task/h | `sample-62d6f3de27bf` | `sample-24da51117512` "(EngineCore pid=3264492) ValueError: max_num_seqs (1024) exceeds available Mamba cache blocks (797). Each decode sequence requires one Mamba cache block, so CUDA graph capture cannot proceed. Please lower max_num_seqs to at most 797 or increase gpu_memory_utilization." |
 | train | debug=True models.probe=qwen3_0pt6b probe.method=cgen probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA RTX A6000 47 GiB | 2 | 0 | peak 24.23 GiB | 40.6 step/h | `train-cd96d5598d1d` | - |
 | train | debug=True models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA RTX A6000 47 GiB | 1 | 0 | peak 21.95 GiB | 77.4 step/h | `train-692042300dde` | - |
 | train | debug=False models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 3 | 0 | peak 44.0 GiB | 773.1 step/h | `train-4d927b044d3e` | - |
-| sample | debug=False models.agent=qwen3pt6_35b_a3b cards_per_agent_server=1 | NVIDIA H100 NVL 93 GiB | 0 | 1 | weights 64.69 + KV cache 16.06 GiB, concurrency 6.23x | - | `sample-24da51117512` | `sample-24da51117512` "(EngineCore pid=3264492) ValueError: max_num_seqs (1024) exceeds available Mamba cache blocks (797). Each decode sequence requires one Mamba cache block, so CUDA graph capture cannot proceed. Please lower max_num_seqs to at most 797 or increase gpu_memory_utilization." |
 | train | debug=True models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 1 | 0 | peak 12.6 GiB | 92.4 step/h | `train-4a9594541c2d` | - |
 | train | debug=False models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 1 | 0 | peak 17.58 GiB | 1578.6 step/h | `train-29715d50906f` | - |
 | train | debug=True models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=False train.import_from=None | NVIDIA RTX A6000 47 GiB | 3 | 0 | peak 44.11 GiB | 48.8 step/h | `train-7c9171c90df1` | - |
