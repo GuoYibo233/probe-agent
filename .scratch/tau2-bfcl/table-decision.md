@@ -8,15 +8,19 @@ Written 2026-10-06 while finishing the tau2 and BFCL branch
 1. tau2's user simulator calls tools only in the telecom domain (airline and retail users
    have no tools). tau2's own client sends the tool schemas with `tool_choice: auto` whenever
    tools exist (`external/tau2-bench/src/tau2/utils/llm_utils.py`, the `generate` function).
-2. vLLM accepts such a request only when the server runs with `--enable-auto-tool-choice
-   --tool-call-parser <name>`. For gpt-oss the server ignores the flag and always parses tool
-   calls; the server log of the gpt-oss telecom test reads "For gpt-oss, we ignore
-   --enable-auto-tool-choice and always enable tool use" and carries no refused request.
-   So gpt-oss needs no table change.
-3. Qwen3.6-35B-A3B and Qwen3.8-27B need the flag. Their chat templates write tool calls as
-   `<tool_call><function=...>` XML, which the installed vLLM 0.26.0 parses with the parser named
-   `qwen3_xml` (registered in `vllm/tool_parsers/__init__.py`; `hermes` reads JSON inside
-   `<tool_call>` and would misread these models).
+2. vLLM returns a parsed tool call only when the server runs with `--enable-auto-tool-choice
+   --tool-call-parser <name>`. gpt-oss needs it too: without a tool parser the chat-completion
+   path drops the harmony tool segment and returns a message with neither text nor a call,
+   which is exactly the "UserMessage must have either content or tool_calls" abort of two of
+   the three telecom tasks in the gpt-oss debug test (`sample-802ef60c7aec`). The server
+   refuses nothing for gpt-oss (its "we ignore --enable-auto-tool-choice" warning belongs to
+   the Responses API, which tau2 does not use), so the failure is silent. The gpt-oss parser
+   name is `openai`.
+3. Qwen3.6-35B-A3B and Qwen3.8-27B get an HTTP 400 without the flag (all six telecom tasks of
+   the Qwen3.6 debug test `sample-4cae8909bbae`). Their chat templates write tool calls as
+   `<tool_call><function=...>` XML; the installed vLLM 0.26.0 parses that with the parser
+   named `qwen3_coder` (the Qwen3.6 README's own vLLM line; `qwen3_xml` is a second name for
+   the same class; `hermes` reads JSON inside `<tool_call>` and would misread these models).
 4. The place for a server flag today is the `extra_flags` field of a model row, and that field
    sits in the row's `result:` block, which expands into the setting before keying. Adding a
    flag there changes the key of every run that names the row: the two finished Qwen
