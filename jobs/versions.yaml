@@ -255,3 +255,11 @@
     field name, which a sample run never applies (the budget cuts probe texts on the inject side and in
     the build), and in the probe service's launch check fixture, now the agent family's own stop token;
     a sample run's records are unchanged (the collection 363859498f89)
+- stage: sample
+  era: 2
+  from: 0a81553d638cf17a12c411e7b63fdd55ab245e46
+  same: ac84e22eb6162f4d67e3d62619023266e63dbf9f
+  date: 2026-10-05
+  why: Since 0a81553 the record reader hands Polars a jsonl file's bytes instead of its path, so a file
+    name holding [ ] is no longer expanded as a pattern; every record that read before reads to the same
+    frame, and a sample run writes its records as it did

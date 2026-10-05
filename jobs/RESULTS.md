@@ -3,6 +3,9 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `build-7fa7954d55d0` | 2026-10-05 09:02 | build | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_ctool_qwen3_0pt6b_full | `0a81553` | failed | - | - |
+| `sample-4cae8909bbae` | 2026-10-05 08:19 | sample | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_ctool_qwen3_0pt6b_full | `0a81553` | ok | - | - |
+| `sample-e26d11a7e716` | 2026-10-05 08:06 | sample | draft/tau2_and_bfcl_probe_test_2026_10_05/bfcl_test_2026_10_05_ctool_qwen3_0pt6b_full | `f0a9846` | launching | - | - |
 | `sample-62d6f3de27bf` | 2026-10-05 00:25 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `5d46d9a` | launching | - | - |
 | `eval-b1bf7058f11b` | 2026-10-04 22:18 | eval | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `47dae68` | ok | - | report.md |
 | `sample-24da51117512` | 2026-10-04 22:18 | sample | draft/full_history_qwen/collection_2026_10_02_qwen3pt6_35b_a3b_full_history_ctool_qwen3_0pt6b_full | `47dae68` | launch_failed | - | - |
