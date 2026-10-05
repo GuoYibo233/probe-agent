@@ -238,8 +238,19 @@ class Tau2CallSyntaxTest(unittest.TestCase):
         self.assertEqual(fenced[start:end], "get_order_details(order_id='#W1')")
         self.assertEqual(self.env.split_args("[think(thought='a'), think(thought='b')]")[1], [("thought", '"a"')])
         for message in ("Sure, I can help(you) with that.", "Hello", "", None, "get_user_details(user_id='x'",
-                        "Your total is calculate(1)."):
+                        "Your total is calculate(1).", "[NO RESPONSE]", "[ ]", "The options are [1, 2]."):
             self.assertIsNone(self.env.split_args(message), message)
+
+    def test_the_turn_ends_at_the_first_call_list(self):
+        """Text around a call list: the first list of calls is the call, as a native function
+        call ends the model's turn; what comes after it is never read."""
+        mixed = ('We need to look it up.\n[NO RESPONSE]\n[ get_reservation_details(reservation_id="EHGLP3") ]\n'
+                 '[NO RESPONSE]\n[cancel_reservation(reservation_id="EHGLP3")]')
+        tool, args, (start, end) = self.env.split_args(mixed)
+        self.assertEqual((tool, args), ("get_reservation_details", [("reservation_id", '"EHGLP3"')]))
+        self.assertEqual(mixed[start:end], 'get_reservation_details(reservation_id="EHGLP3")')
+        nested = "[f(x=[1, 2], y='a]b'), g()] and then more text"
+        self.assertEqual(self.env.split_args(nested)[:2], ("f", [("x", "[1, 2]"), ("y", '"a]b"')]))
 
     def test_values_read_as_one_json_text(self):
         """The same value written two ways reads the same: quotes, JSON's true/false/null and

@@ -3,6 +3,8 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `sample-9ef3067c6e58` | 2026-10-05 18:11 | sample | draft/tau2_and_bfcl_full_length_probe_test_2026_10_05/bfcl_full_length_test_2026_10_05_gpt_oss_120b_ctool_qwen3_0pt6b_full | `73b6db8` | launching | - | - |
+| `sample-386b6c29b88d` | 2026-10-05 18:09 | sample | draft/tau2_and_bfcl_full_length_probe_test_2026_10_05/tau2_full_length_test_2026_10_05_gpt_oss_120b_ctool_qwen3_0pt6b_full | `73b6db8` | launching | - | - |
 | `score-3d4673fc037f` | 2026-10-05 11:58 | score | draft/tau2_and_bfcl_inject_test_2026_10_05/tau2_test_2026_10_05_probe_p1_e1_second_cut | `1a1fd18` | ok | success=0.0 base_success=0.0 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=9 | report.md |
 | `inject-a1ef2606221e` | 2026-10-05 11:51 | inject | draft/tau2_and_bfcl_inject_test_2026_10_05/tau2_test_2026_10_05_probe_p1_e1_second_cut | `1a1fd18` | ok | - | - |
 | `eval-bbe10608ceaf` | 2026-10-05 11:50 | eval | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_ctool_qwen3_0pt6b_full | `1a1fd18` | ok | - | report.md |

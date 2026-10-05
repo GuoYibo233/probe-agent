@@ -26,7 +26,7 @@ from data.environments import Environment, StepObservation
 # in its native <tool_call> markup, then wrapped each call as func_name(get_user_details(...)).
 INSTRUCTIONS = {"v1": """<tool_call_format>
 If you decide to invoke any of the function(s), you MUST put it in the format of [func_name1(params_name1=params_value1, params_name2=params_value2...), func_name2(params)] You SHOULD NOT include any other text in the response.
-Write the function's own name in place of func_name and its parameter names in place of params_name, and give each value as a JSON value (a string in double quotes, a number, true, false, null, a list or an object). For example, a function get_weather with the parameters city and days is invoked as [get_weather(city="Paris", days=3)]. A reply that is not in this format is sent to the user as your message.
+Write the function's own name in place of func_name and its parameter names in place of params_name, and give each value as a JSON value (a string in double quotes, a number, true, false, null, a list or an object). For example, a function get_weather with the parameters city and days is invoked as [get_weather(city="Paris", days=3)]. Your turn ends at the function call: nothing written after it is read, and its result comes back to you as the next message. A reply with no function call in this format is sent to the user as your message.
 The result of a tool call comes back to you as a list of {'role': 'tool', 'name': <the call>, 'content': <its output>}.
 </tool_call_format>
 <tools>
@@ -87,11 +87,16 @@ def _unfenced(text: str) -> str:
 
 
 def _call_close(text: str, start: int) -> int | None:
-    """Index of the `)` closing the call whose `(` is at `start`; None when it never closes.
+    """Index of the `)` closing the call whose `(` is at `start`; None when it never closes."""
+    return _close(text, start, "(", ")")
 
-    Python source rules, so a parenthesis inside a string literal is left alone: inside a
-    literal only its closing quote counts (single, double and triple quoted), and a backslash
-    escapes the next character.
+
+def _close(text: str, start: int, opener: str, closer: str) -> int | None:
+    """Index of the `closer` that closes the `opener` at `start`; None when it never closes.
+
+    Python source rules, so a bracket inside a string literal is left alone: inside a literal
+    only its closing quote counts (single, double and triple quoted), and a backslash escapes
+    the next character.
     """
     i, depth = start, 0
     quote: str | None = None
@@ -111,9 +116,9 @@ def _call_close(text: str, start: int) -> int | None:
             quote = c * 3 if text.startswith(c * 3, i) else c
             i += len(quote)
             continue
-        if c == "(":
+        if c == opener:
             depth += 1
-        elif c == ")":
+        elif c == closer:
             depth -= 1
             if depth == 0:
                 return i
@@ -134,6 +139,33 @@ def _calls(text: str) -> list[ast.Call] | None:
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
             return None
     return nodes
+
+
+def _reply_calls(text: str) -> tuple[str, list[ast.Call], int] | None:
+    """The calls a reply makes, and where the agent's turn ends: the whole reply when it is one call
+    or a list of calls (a fenced block counts as its inside), else the first bracketed list of
+    calls in it, after which the turn ends as a native function call ends it, so the text after
+    that list is never read. Returns the source the calls are parsed from, the calls, and the
+    index in `text` where that source starts; None for a reply with no call, a message.
+
+    gpt-oss often writes a sentence before its call and goes on after it with an imagined tool
+    reply and more calls (66 of 176 replies in a 2026-10-05 test run); tau2's own agent, whose
+    calls come out of the API's function calling, stops at its call.
+    """
+    raw = text or ""
+    whole = _unfenced(raw)
+    calls = _calls(whole)
+    if calls is not None:
+        return whole, calls, raw.find(whole)
+    i = raw.find("[")
+    while i != -1:
+        j = _close(raw, i, "[", "]")
+        if j is not None:
+            calls = _calls(raw[i:j + 1])
+            if calls is not None:
+                return raw[i:j + 1], calls, i
+        i = raw.find("[", i + 1)
+    return None
 
 
 def _value(node: ast.AST):
@@ -327,12 +359,11 @@ class Tau2(Environment):
     # ---- call syntax, read without tau2 ----
 
     def split_args(self, text: str) -> tuple[str, list[tuple[str, str]], tuple[int, int]] | None:
-        source = _unfenced(text)
-        calls = _calls(source)
-        if calls is None:
+        found = _reply_calls(text)
+        if found is None:
             return None
+        source, calls, start = found
         first = calls[0]
-        start = (text or "").find(source)
         span = (start + _char_offset(source, first.lineno, first.col_offset),
                 start + _char_offset(source, first.end_lineno, first.end_col_offset))
         return first.func.id, _args(first, source), span
@@ -434,17 +465,19 @@ class Tau2(Environment):
         t = _load(self.data)
         orch = self._orch
         source = _unfenced(reply_text)
-        calls = _calls(source)
+        found = _reply_calls(reply_text)
         # A reply the text protocol cannot read reaches neither the user nor the world: like
         # AppWorld's reply without a code block, it gets NO_CODE_MESSAGE (action None) and the
         # agent's turn is asked again; the official agent, whose calls come out of the API's
         # function calling, has no such reply.
         if source == "":
             return StepObservation(None, "", "empty_reply", False)
-        if calls is None:
+        if found is None:
             message = t.AssistantMessage(role="assistant", content=source)
             calls_text: list[str] = []
+            action = source
         else:
+            calls_source, calls, start = found
             try:
                 tool_calls = [
                     t.ToolCall(id=f"call_{len(orch.trajectory)}_{k}", name=c.func.id,
@@ -453,8 +486,12 @@ class Tau2(Environment):
                 ]
             except (ValueError, SyntaxError):
                 return StepObservation(None, "", "malformed_call", False)
-            message = t.AssistantMessage(role="assistant", content=None, tool_calls=tool_calls)
-            calls_text = [ast.get_source_segment(source, c) for c in calls]
+            # The text before the calls stays with them as the message's content, as tau2 keeps
+            # an agent message that holds both (it goes to the environment, not to the user).
+            before = (reply_text or "")[:start].strip()
+            message = t.AssistantMessage(role="assistant", content=before or None, tool_calls=tool_calls)
+            calls_text = [ast.get_source_segment(calls_source, c) for c in calls]
+            action = calls_source
 
         orch.agent.pending = message
         orch.step()
@@ -470,7 +507,7 @@ class Tau2(Environment):
                 error_kind = "tool_error"
         else:
             observation = delivered.content or ""
-        return StepObservation(source, self._capped(observation), error_kind, orch.done)
+        return StepObservation(action, self._capped(observation), error_kind, orch.done)
 
     def changes_state(self, call: str) -> bool:
         """Whether running `call` would leave the conversation's world different: its first call is to a tool tau2 types WRITE, or to the hand-off to a human agent.
