@@ -735,16 +735,17 @@ def run(run_dir: Path) -> None:
                 f"{predictions_path}: no prediction file for eval.checkpoint {checkpoint!r}; the "
                 f"train run predicted from {train_meta['stage_extra'].get('checkpoints', ['best'])}")
         pred_df = probe_output.read(predictions_path)
-        methods_found = sorted(pred_df["method"].unique().to_list())
-        if methods_found != [method]:
+        # Every row present names this run's method and copy. A generator whose classifier eval
+        # fired on no test row has a prediction file with no rows, which holds to both rules.
+        other_methods = sorted(set(pred_df["method"].to_list()) - {method})
+        if other_methods:
             raise ValueError(
-                f"{predictions_path}: method column holds {methods_found}, "
-                f"expected only [{method!r}]")
-        copies_found = sorted(pred_df["checkpoint"].unique().to_list())
-        if copies_found not in ([checkpoint], [None]):
+                f"{predictions_path}: method column holds {other_methods} beside {method!r}")
+        other_copies = sorted(set(pred_df["checkpoint"].to_list()) - {checkpoint, None})
+        if other_copies:
             raise ValueError(
-                f"{predictions_path}: checkpoint column holds {copies_found}, expected only "
-                f"[{checkpoint!r}] (or unset, in a file written before pass copies existed)")
+                f"{predictions_path}: checkpoint column holds {other_copies}; every row is "
+                f"{checkpoint!r} (or unset, in a file written before pass copies existed)")
         total_events = pred_df["event_id"].n_unique()
         # The beat's total is the report's pass count, the only unit the report advances by: it
         # walks the whole frame once per theta and once or more per risk target, so there is no
