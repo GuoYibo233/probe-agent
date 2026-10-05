@@ -337,6 +337,45 @@ gyb's word "start qwen3.8 at H100" (2026-10-02). Setting
 The retraining was gyb's "redo" of 2026-10-03 after the build era row of 094816b. The
 Qwen3.6-35B-A3B real chain has not been started.
 
+### 5.6 Run log of the real Qwen3.6-35B-A3B collection (sample-62d6f3de27bf)
+
+- 2026-10-05 00:25 JST: launched on tokyo108 cards 1 and 2 (H100, `--max-num-seqs 64` in
+  the row after `sample-24da51117512`'s servers refused to start at the default), two
+  servers, 12 loops. Measured 70 to 95 task runs per hour (Qwen3.8-27B ran about 225 on
+  the same cards; Qwen3.6 writes several times more tokens per task).
+- 18:07 JST: the server on card 1 (piece 12) stopped answering: its log `log/12.txt` has a
+  page stuck on tokyo108's NFS client (`folio_wait_bit_common` in the `tee` that writes
+  it), the same fault as the gpt-oss collection's on 2026-10-01. Loop piece 2 died on
+  task `e3d6c94_2` seed 42 with "a service stopped answering"; the other 11 loops
+  finished. 1574 of 1575 task runs are on disk.
+- 19:32 JST: `refire --piece 2` restarted the loop, which waited 1800 s for
+  `service_agent_2.json` (it reads `sample.replicas` 3 from the setting, not the launch's
+  override of 2) and died. Needs a look: a refire of a loop piece does not take the
+  launch's `sample.replicas` / `sample.pieces` overrides.
+- 21:15 JST: `run.py kill` ended every session and then blocked reading `log/12.txt`
+  while holding `jobs/runs.jsonl.lock` (pid 4169497, uninterruptible). `log/12.txt` was
+  copied to the session scratchpad and removed from the run directory at 22:15 JST; the
+  process stayed blocked. Every `run.py` command that takes the registry lock (launch,
+  kill, refire, retry, wrap-up) blocks on tokyo108 until that process ends; `ls` works.
+- 22:17 JST: the relaunch walk (pid 41678) waited two hours on the lock and was ended by
+  hand at 00:20 JST on 2026-10-06. Open: wait for tokyo108's NFS client to release the
+  page (the 2026-10-01 processes cleared on their own, time unknown), or an administrator
+  remounts or reboots tokyo108, which also ends the gpt-oss training on card 0.
+- 2026-10-06 00:42 JST, gyb's ruling: bypass the stuck lock. `jobs/runs.jsonl.lock` was
+  renamed to `jobs/runs.jsonl.stuck-2026-10-05.lock` (a flock sits on the inode, so the
+  frozen process keeps the old one and every new `run.py` takes a fresh file; the first
+  name tried, `...lock.stuck-2026-10-05`, tripped the dirty-tree gate because only `*.lock`
+  is ignored). The frozen kill (pid 4169497) was left alone.
+- 00:43 JST: relaunched on cards 1 and 2 (`run.py: launched sample-62d6f3de27bf`). Eleven
+  loops found their records finished and ended at once; loop piece 1 redoes
+  `e3d6c94_2` seed 42 (1575 record files on disk). The new server on card 1 writes a fresh
+  `log/12.txt` to the same disk, so the fault can recur; gyb asks the administrator for a
+  remount separately.
+- Expected later: when the frozen kill unfreezes it appends a stale `killed` finish row
+  for this run under the old lock; if `run.py ls` then shows the run as killed, the
+  wrap-up command is run once more and re-certifies it (a new `ok` row; nothing is edited
+  by hand).
+
 ### 5.4 Open points for gyb on these two
 
 1. Qwen3.8-27B's reasoning tier: DECIDED (gyb, 2026-10-02: "use Extra-high"). It is the

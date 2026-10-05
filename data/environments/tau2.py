@@ -47,7 +47,18 @@ AGENT_NAME = "new1_loop_agent"
 # The name of tau2's user simulator as registered here (VisibleReplyUserSimulator in _load), and
 # the tag that closes a reasoning model's thinking in a reply text.
 USER_NAME = "new1_visible_reply_user_simulator"
+THINK_START = "<think>"
 THINK_END = "</think>"
+# The server flags that make vLLM parse a model's tool calls out of a chat completion. tau2's
+# user simulator calls tools in the telecom domain alone (airline and retail users have none) and
+# sends them with tool_choice "auto": without the flags a Qwen server answers HTTP 400 naming them,
+# and a gpt-oss server answers with a user turn that holds neither text nor a call (its harmony
+# tool segment is dropped). Both are the server's configuration, not one task's failure, so both
+# end the piece as a service gone (`_agent_server_failures`, VisibleReplyUserSimulator); the
+# parser is openai for gpt-oss and qwen3_coder for the Qwen3 family, set in models/table.yaml.
+TOOL_CALL_FLAGS = "--enable-auto-tool-choice --tool-call-parser"
+NO_USER_TURN = ("tau2: the agent server answered the user simulator with neither text nor a tool call on a "
+                f"domain whose user calls tools; the server runs without {TOOL_CALL_FLAGS} <parser>")
 # tau2's user simulator talks to the agent model's own server through litellm's OpenAI-compatible
 # provider; the temperature is tau2's own default for the user (DEFAULT_LLM_TEMPERATURE_USER).
 USER_PROVIDER = "openai"
@@ -169,6 +180,22 @@ def _reply_calls(text: str) -> tuple[str, list[ast.Call], int] | None:
     return None
 
 
+def _message_text_before_calls(raw: str, source: str, calls_source: str, start: int) -> str | None:
+    """The text an agent message carries beside its calls: what the reply says before its call list, None when there is none. A reply that is one call list, fenced or not (`calls_source` is its unfenced whole, `source`), says nothing before it, so the fence opener is never that text."""
+    if calls_source == source:
+        return None
+    return raw[:start].strip() or None
+
+
+def _visible_text(content: str) -> str:
+    """The text a reasoning model's reply shows: what follows its closing think tag; nothing when the thinking opened and never closed (a length cut), so the thinking, which quotes the user's hidden scenario, never reaches the agent; the whole text when it has no think tag."""
+    if THINK_END in content:
+        return content.rsplit(THINK_END, 1)[1].strip()
+    if THINK_START in content:
+        return ""
+    return content
+
+
 def _value(node: ast.AST):
     """The JSON value an argument node writes: a Python literal, with JSON's true, false and null read too; ValueError for anything that is no literal."""
     if isinstance(node, ast.Name) and node.id in JSON_NAMES:
@@ -213,9 +240,10 @@ def _tool_call_arguments(call: ast.Call) -> dict:
 def _agent_server_failures():
     """Raise litellm's failures that mean the agent model's server stopped answering as the
     builtin errors agent/run_tasks.py reads as a service gone, so the piece ends and the task
-    runs again on the next launch: no connection or a timeout, or an HTTP status other than 400
-    (400 is one request's own failure). litellm's own errors subclass neither builtin, and
-    without this a dead server failed every remaining task of a piece for good."""
+    runs again on the next launch: no connection or a timeout, an HTTP status other than 400, or
+    a 400 that names the tool-call flags the server runs without (400 is otherwise one request's
+    own failure). litellm's own errors subclass neither builtin, and without this a dead server
+    failed every remaining task of a piece for good."""
     import openai
     try:
         yield
@@ -227,6 +255,9 @@ def _agent_server_failures():
         status = getattr(exc, "status_code", None)
         if isinstance(status, int) and status != 400:
             raise ConnectionError(f"tau2: the agent server answered HTTP {status}: {exc}") from exc
+        if status == 400 and TOOL_CALL_FLAGS.split()[0] in str(exc):
+            raise ConnectionError(f"tau2: the agent server runs without {TOOL_CALL_FLAGS} <parser>, "
+                                  f"which the telecom user simulator's tool calls need: {exc}") from exc
         raise
 
 
@@ -303,14 +334,21 @@ def _load(data_root: str) -> SimpleNamespace:
 
         A reasoning model served without a reasoning parser (the Qwen rows) returns its thinking
         and its answer as one text, and the thinking quotes the user's hidden scenario; the
-        message the agent reads is the answer alone, as a model served with a parser (gpt-oss)
-        already returns it.
+        message the agent reads is the answer alone (`_visible_text`), as a model served with a
+        parser (gpt-oss) already returns it. A turn with neither visible text nor a tool call is
+        no message tau2 can deliver: on a domain whose user calls tools it is the server running
+        without the tool-call flags (NO_USER_TURN, a service gone, the piece ends); elsewhere it
+        is this task's own failure.
         """
 
         def _generate_next_message(self, message, state):
             user_message = super()._generate_next_message(message, state)
-            if user_message.content is not None and THINK_END in user_message.content:
-                user_message.content = user_message.content.rsplit(THINK_END, 1)[1].strip()
+            if user_message.content is not None:
+                user_message.content = _visible_text(user_message.content)
+            if not user_message.content and not user_message.tool_calls:
+                if self.tools:
+                    raise ConnectionError(NO_USER_TURN)
+                raise RuntimeError("tau2: the user simulator's reply has no visible text and no tool call")
             return user_message
 
     if registry.get_agent_factory(AGENT_NAME) is None:
@@ -511,8 +549,8 @@ class Tau2(Environment):
                 return StepObservation(None, "", "malformed_call", False)
             # The text before the calls stays with them as the message's content, as tau2 keeps
             # an agent message that holds both (it goes to the environment, not to the user).
-            before = (reply_text or "")[:start].strip()
-            message = t.AssistantMessage(role="assistant", content=before or None, tool_calls=tool_calls)
+            before = _message_text_before_calls(reply_text or "", source, calls_source, start)
+            message = t.AssistantMessage(role="assistant", content=before, tool_calls=tool_calls)
             calls_text = [ast.get_source_segment(calls_source, c) for c in calls]
             action = calls_source
 

@@ -17,6 +17,7 @@ from experimental_settings import schema
 import models
 from models.probe_models import base
 from data import training_data, probe_output
+from eval.utils import probe_eval
 from jobs import registry
 
 
@@ -307,9 +308,12 @@ def run(run_dir: Path, method) -> None:
     build_dir = schema.run_dir_of("build", cfg._upstream["build"], debug=cfg._debug)
     examples_path = build_dir / "examples.parquet"
     df = training_data.read(examples_path)
-    _atomic_write_json(run_dir / "consumed.json", [{
-        "path": str(examples_path), "sha1": _sha1(examples_path), "n_rows": df.height,
-    }])
+    consumed = [{"path": str(examples_path), "sha1": _sha1(examples_path), "n_rows": df.height}]
+    # The rows the prediction step writes for: every row, or, for a run whose stage table folds
+    # in a classifier eval (a generator's eval.theta_from), the rows that eval fired on. Read
+    # before training, so a classifier eval of another build refuses the run before any step.
+    fired_ids = _fired_ids(cfg, consumed)
+    _atomic_write_json(run_dir / "consumed.json", consumed)
 
     if resume_step is not None or predict_only:
         ckpt_meta = json.loads((ckpt_dir / "meta.json").read_text())
@@ -611,6 +615,8 @@ def run(run_dir: Path, method) -> None:
     predict_frames = {}
     for split in predict_splits:
         split_df = df.filter(pl.col("split") == split).sort("example_id")
+        if fired_ids is not None:
+            split_df = split_df.filter(pl.col("example_id").is_in(fired_ids))
         if cfg.train.predict.cap is not None:
             split_df = split_df.head(cfg.train.predict.cap)
         predict_frames[split] = split_df
@@ -652,6 +658,34 @@ def run(run_dir: Path, method) -> None:
         era=cfg._era, metrics=dict(train_val_metrics), report=None,
         stage_extra={"labels": labels, "checkpoints": [name for name, _dir in copies]})
     hb.finish()
+
+
+def _fired_ids(cfg, consumed: list[dict]) -> list[str] | None:
+    """The example ids the prediction step writes for: None (every row) when the frozen upstream map holds no classifier eval, else the rows the eval named as `theta_from.eval` fired on. That eval's own train run must share this run's build key, as the generator eval requires, so its example ids name this run's rows; its fired rows file joins `consumed`."""
+    eval_key = cfg._upstream.get("theta_from.eval")
+    if eval_key is None:
+        return None
+    eval_dir = schema.referenced_run_dir("eval", eval_key)
+    if eval_dir is None:
+        raise SystemExit(f"theta_from.eval {eval_key}: no run directory under either root")
+    ref_train_key = json.loads((eval_dir / "meta.json").read_text())["upstream"]["train"]
+    ref_train_dir = schema.referenced_run_dir("train", ref_train_key)
+    if ref_train_dir is None:
+        raise SystemExit(
+            f"train key {ref_train_key} of the classifier eval {eval_dir}: no run directory under "
+            "either root")
+    ref_build_key = json.loads((ref_train_dir / "meta.json").read_text())["upstream"]["build"]
+    if ref_build_key != cfg._upstream["build"]:
+        raise SystemExit(
+            f"the classifier eval {eval_dir} scored build {ref_build_key}, this run trains on build "
+            f"{cfg._upstream['build']}; its fired rows name another build's examples")
+    try:
+        ids = probe_eval.fired_example_ids(eval_dir)
+    except ValueError as exc:
+        raise SystemExit(f"theta_from.eval: {exc}") from exc
+    fires_path = eval_dir / "fires.parquet"
+    consumed.append({"path": str(fires_path), "sha1": _sha1(fires_path), "n_rows": len(ids)})
+    return sorted(ids)
 
 
 def _pass_name(epoch: int) -> str:

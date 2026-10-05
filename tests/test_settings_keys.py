@@ -135,6 +135,23 @@ class KeyMovementTest(unittest.TestCase):
         path, name = _first_setting("baseline")
         self.assertEqual(_moved(path, name, {"sample.max_steps": "10"}), ["sample", "score"])
 
+    def test_a_generator_train_folds_in_its_classifier_eval(self):
+        """A generator's train run writes calls only for the rows its eval.theta_from classifier
+        eval fired on, so that eval's key is in the generator's train key; a classifier's train
+        run has no such upstream."""
+        path = SETTINGS_DIR / "train_probe.yaml"
+        gen = _load(path, "cgen_qwen3_0pt6b")[0]
+        cls = _load(path, "ctool_qwen3_0pt6b")[0]
+        gen_train = schema.upstream("train", gen)
+        self.assertIn("theta_from.eval", gen_train)
+        self.assertEqual(gen_train["theta_from.eval"], schema.upstream("eval", gen)["theta_from.eval"])
+        self.assertEqual(gen_train["theta_from.eval"], schema.key("eval", cls))
+        self.assertNotIn("theta_from.eval", schema.upstream("train", cls))
+        # a classifier eval field moves the generator's train key, and only the classifier's eval
+        before = schema.key("train", gen)
+        moved = _load(path, "cgen_qwen3_0pt6b", overrides={"eval.bootstrap": "10"})[0]
+        self.assertEqual(schema.key("train", moved), before, "the generator's own eval field moves no train key")
+
     def test_eval_field_moves_eval_only(self):
         path, name = _first_setting("train_probe")
         self.assertEqual(_moved(path, name, {"eval.bootstrap": "10"}), ["eval"])

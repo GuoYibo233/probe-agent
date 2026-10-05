@@ -8,7 +8,9 @@
 .venv/
 **/.venv/
 external/appworld
+external/bfcl
 external/probe-env
+external/tau2-bench
 external/vllm-env
 external/tau2-bench
 external/bfcl

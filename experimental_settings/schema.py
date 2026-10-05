@@ -269,7 +269,13 @@ STAGES = {
   "train": {
     "sections": ("models.probe", "probe", "train"),
     "models": ("probe",),
-    "upstream": ({"name": "build", "source": "same", "stage": "build", "key": "fold"},),
+    # A generator's train run also folds in the classifier eval its eval.theta_from names: its
+    # prediction step writes calls only for the rows that eval fired on, the rows the generator
+    # report scores (2026-10-05; writing every row of a full-history build was about a million
+    # generations per weight copy against about 12,000 the report reads).
+    "upstream": ({"name": "build", "source": "same", "stage": "build", "key": "fold"},
+                 {"name": "theta_from.eval", "source": "ref:eval.theta_from",
+                  "stage": "eval", "key": "fold", "when": "generator"}),
     "program": "train.methods.{method}",
     "venv": "probe",
     "pieces": (("train", 1, None),),
@@ -1370,13 +1376,25 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
 
     datasets = _datasets_config()
     dataset_splits = set(datasets.get(env, {}).get("splits", {}))
-    split_role = set(module_literal(_env_module(env), "SPLIT_ROLE"))
+    split_role_table = module_literal(_env_module(env), "SPLIT_ROLE")
+    split_role = set(split_role_table)
     valid_splits = dataset_splits & split_role
     for sec in ("sample", "inject"):
         if sec in full and full[sec].get("split") is not None:
             for s in full[sec]["split"]:
                 if s not in valid_splits:
                     raise SchemaError(f"{sec}.split: {s!r} is not a split of env {env!r} ({sorted(valid_splits)})")
+    # A build that splits by the benchmark's official lists needs a list for each role the
+    # trainer reads: no train split gives a run with no usable weights, no val split no metric.
+    # tau2 has no val list and BFCL is test sets alone; both take split_source hash.
+    if "build" in workflow and full["build"]["split_source"] == "env":
+        roles = set(split_role_table.values())
+        for role in ("train", "val", "test"):
+            if role not in roles:
+                raise SchemaError(
+                    f"build.split_source: 'env' needs a {role} split among env {env!r}'s official lists, "
+                    f"which hold the roles {sorted(roles)}; a stable hash split (build.split_source: hash) "
+                    f"gives one")
 
     table = _table()
     agent_alias = full["models"]["agent"]

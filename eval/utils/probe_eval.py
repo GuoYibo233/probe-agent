@@ -85,6 +85,24 @@ def read_report(run_dir: Path) -> tuple[dict, pl.DataFrame | None]:
     return fields, fires
 
 
+def fired_example_ids(run_dir: Path) -> set[str]:
+    """The test-split example ids a classifier eval run fired on, over every risk target: the rows the generator report scores (it joins the test predictions to the test fires), so the rows a generator's train run writes calls for. Refuses an eval run with no done.json, a report that is not a classifier's, and an imported classifier eval, which holds no fired rows."""
+    run_dir = Path(run_dir)
+    if not (run_dir / "done.json").exists():
+        raise ValueError(f"{run_dir}: the classifier eval has no done.json")
+    fields, fires = read_report(run_dir)
+    if fields.get("probe_kind") != "classifier":
+        raise ValueError(
+            f"{run_dir}: a {fields.get('probe_kind')!r} report; the fired rows come from a classifier eval")
+    if fields.get("imported"):
+        raise ValueError(
+            f"{run_dir}: an import of {fields.get('imported_from')} holds no fired rows; name a "
+            "fitted classifier eval")
+    if fires is None:
+        return set()
+    return set(fires.filter(pl.col("split") == "test")["example_id"].to_list())
+
+
 def softmax(logits: "np.ndarray", temperature: float) -> "np.ndarray":
     """Softmax over the last axis of logits / temperature, numerically stabilised by subtracting the row max."""
     scaled = np.asarray(logits, dtype=np.float64) / temperature
@@ -717,16 +735,17 @@ def run(run_dir: Path) -> None:
                 f"{predictions_path}: no prediction file for eval.checkpoint {checkpoint!r}; the "
                 f"train run predicted from {train_meta['stage_extra'].get('checkpoints', ['best'])}")
         pred_df = probe_output.read(predictions_path)
-        methods_found = sorted(pred_df["method"].unique().to_list())
-        if methods_found != [method]:
+        # Every row present names this run's method and copy. A generator whose classifier eval
+        # fired on no test row has a prediction file with no rows, which holds to both rules.
+        other_methods = sorted(set(pred_df["method"].to_list()) - {method})
+        if other_methods:
             raise ValueError(
-                f"{predictions_path}: method column holds {methods_found}, "
-                f"expected only [{method!r}]")
-        copies_found = sorted(pred_df["checkpoint"].unique().to_list())
-        if copies_found not in ([checkpoint], [None]):
+                f"{predictions_path}: method column holds {other_methods} beside {method!r}")
+        other_copies = sorted(set(pred_df["checkpoint"].to_list()) - {checkpoint, None})
+        if other_copies:
             raise ValueError(
-                f"{predictions_path}: checkpoint column holds {copies_found}, expected only "
-                f"[{checkpoint!r}] (or unset, in a file written before pass copies existed)")
+                f"{predictions_path}: checkpoint column holds {other_copies}; every row is "
+                f"{checkpoint!r} (or unset, in a file written before pass copies existed)")
         total_events = pred_df["event_id"].n_unique()
         # The beat's total is the report's pass count, the only unit the report advances by: it
         # walks the whole frame once per theta and once or more per risk target, so there is no

@@ -1,8 +1,12 @@
 # Draft workflow (agent-written, 2026-10-05): the collection half of the end-to-end test of the
 # two new benchmark environments on the agent model the project runs, gpt-oss-120b, walked with
-# --debug (three tasks per split, six steps per task). It checks what the Qwen3.6 test of
-# draft/tau2_and_bfcl_probe_test_2026_10_05 could not: tau2's telecom user simulator calls its
-# tools through the server's function calling, which vLLM serves for gpt-oss with no extra flag.
+# --debug (three tasks per split, six steps per task). It was meant to check what the Qwen3.6 test
+# of draft/tau2_and_bfcl_probe_test_2026_10_05 could not: tau2's telecom user simulator calls its
+# tools through the server's function calling. Its run (sample-802ef60c7aec, 2026-10-05) showed that
+# gpt-oss needs the server's tool-call flags too (--enable-auto-tool-choice --tool-call-parser
+# openai): without them two of the three telecom tasks got a user turn with neither text nor a
+# call. The flag waits on the model table (.scratch/tau2-bfcl/table-decision.md); airline, retail
+# and BFCL ran.
 workflow: [sample, score]
 
 common:

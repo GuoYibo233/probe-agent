@@ -343,3 +343,71 @@
   why: Since 1a1fd18 the loop routes the environment's own open, step and judge through the same service-failure
     guard as its calls to the agent server and the probe service (agent/run_tasks.py's _served); AppWorld's
     open, step and judge reach no service, so an AppWorld run's records are unchanged
+- stage: train
+  era: 2
+  from: 050a8fa983cc2c2ec5ef12b058d9231c70dc39d7
+  same: eba935493148acf2cca34823bdb3469b7f0a3c29
+  date: 2026-10-05
+  why: The one change since 050a8fa keeps only the test-split rows among the fired rows a generator's
+    train run writes calls for; a classifier train, an eval and an inject run never call it, and the only
+    generator train made under 050a8fa (debug cd96d5598d1d) had a classifier eval with no fired rows,
+    so every run made under 050a8fa is what HEAD produces
+- stage: eval
+  era: 2
+  from: 050a8fa983cc2c2ec5ef12b058d9231c70dc39d7
+  same: eba935493148acf2cca34823bdb3469b7f0a3c29
+  date: 2026-10-05
+  why: The one change since 050a8fa keeps only the test-split rows among the fired rows a generator's
+    train run writes calls for; a classifier train, an eval and an inject run never call it, and the only
+    generator train made under 050a8fa (debug cd96d5598d1d) had a classifier eval with no fired rows,
+    so every run made under 050a8fa is what HEAD produces
+- stage: inject
+  era: 4
+  from: 050a8fa983cc2c2ec5ef12b058d9231c70dc39d7
+  same: eba935493148acf2cca34823bdb3469b7f0a3c29
+  date: 2026-10-05
+  why: The one change since 050a8fa keeps only the test-split rows among the fired rows a generator's
+    train run writes calls for; a classifier train, an eval and an inject run never call it, and the only
+    generator train made under 050a8fa (debug cd96d5598d1d) had a classifier eval with no fired rows,
+    so every run made under 050a8fa is what HEAD produces
+- stage: train
+  era: 2
+  from: 32e5612e23cb8aad1692bd97e70cbfc17e20cdc5
+  same: 2badf694dba51635f2b67791017a328be106c0d3
+  date: 2026-10-05
+  why: The one change since 32e5612 holds the eval's prediction-file columns row by row instead of requiring
+    at least one row; every eval that finished under 32e5612 reads the same report, a prediction file
+    with no rows was refused and is now reported, and train and inject never run this check
+- stage: eval
+  era: 2
+  from: 32e5612e23cb8aad1692bd97e70cbfc17e20cdc5
+  same: 2badf694dba51635f2b67791017a328be106c0d3
+  date: 2026-10-05
+  why: The one change since 32e5612 holds the eval's prediction-file columns row by row instead of requiring
+    at least one row; every eval that finished under 32e5612 reads the same report, a prediction file
+    with no rows was refused and is now reported, and train and inject never run this check
+- stage: inject
+  era: 4
+  from: 32e5612e23cb8aad1692bd97e70cbfc17e20cdc5
+  same: 2badf694dba51635f2b67791017a328be106c0d3
+  date: 2026-10-05
+  why: The one change since 32e5612 holds the eval's prediction-file columns row by row instead of requiring
+    at least one row; every eval that finished under 32e5612 reads the same report, a prediction file
+    with no rows was refused and is now reported, and train and inject never run this check
+- stage: train
+  era: 2
+  from: 768b70e661eaea86ef4652588b2f639818236ae9
+  same: 2be6ffa710066238fcba51db3f458057ca80fe30
+  date: 2026-10-05
+  why: Since 768b70e the trainer reads a classifier eval's fired test rows only for a run whose upstream
+    map folds one in (a generator, by the stage table change of 8106799), and probe_eval gained the fired-row
+    reader and a row-by-row column check; a classifier's train run, such as 125f0bd29777, writes the same
+    checkpoints and prediction rows
+- stage: eval
+  era: 2
+  from: 3a4a30177705eacbe61f93ddbb503412f34ce202
+  same: 2be6ffa710066238fcba51db3f458057ca80fe30
+  date: 2026-10-05
+  why: Since 3a4a301 probe_eval gained the fired-row reader a generator's train run calls and holds the
+    prediction-file columns row by row; a classifier eval over a non-empty prediction file, such as 4319ab69d9c3,
+    writes the same report and fired rows

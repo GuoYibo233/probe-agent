@@ -27,3 +27,14 @@ collection_2026_10_01_three_rounds_ctool_qwen3_0pt6b_full:
   build:  {hist_rounds: 3, probe_result_cap: 400}
   train:  {lr: 1.0e-5, epochs: 3, max_len: 8192, grad_ckpt: true, save_passes: true}
   eval:   {risk: [0.10, 0.05]}
+
+# The whole-call generator on the same build (gyb, 2026-10-05: the full-history probes
+# replace the old ones, and a live run needs a generator trained on the classifier's build).
+# Its prediction step writes calls only for the rows the classifier eval fired on.
+collection_2026_10_01_full_history_cgen_qwen3_0pt6b_full:
+  meta:   {notes: "whole-call generating probe, Qwen3-0.6B-Base, full tuning, on the full-history build; theta and the rows it writes calls for come from the full-history classifier's eval; three passes with a weight copy per pass"}
+  models: {probe: qwen3_0pt6b}
+  probe:  {method: cgen, tuning: full}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_prefix_max_chars: 100000}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
+  eval:   {theta_from: draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full}
