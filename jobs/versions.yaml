@@ -327,3 +327,19 @@
     (instructions(variant) returns INSTRUCTIONS[variant] as it stands, bind_agent keeps nothing), which
     this stage never calls, and the record reader hands Polars a jsonl file's bytes instead of its path,
     which reads every readable file to the same frame; an AppWorld run's output is unchanged
+- stage: sample
+  era: 2
+  from: 1a1fd184494157ebce4cf4ba7fd631014d5188b1
+  same: f4912502eab2f7766dd736e2491be78e90e8164c
+  date: 2026-10-05
+  why: Since 1a1fd18 the loop routes the environment's own open, step and judge through the same service-failure
+    guard as its calls to the agent server and the probe service (agent/run_tasks.py's _served); AppWorld's
+    open, step and judge reach no service, so an AppWorld run's records are unchanged
+- stage: inject
+  era: 4
+  from: 1a1fd184494157ebce4cf4ba7fd631014d5188b1
+  same: f4912502eab2f7766dd736e2491be78e90e8164c
+  date: 2026-10-05
+  why: Since 1a1fd18 the loop routes the environment's own open, step and judge through the same service-failure
+    guard as its calls to the agent server and the probe service (agent/run_tasks.py's _served); AppWorld's
+    open, step and judge reach no service, so an AppWorld run's records are unchanged
