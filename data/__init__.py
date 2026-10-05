@@ -23,11 +23,18 @@ def example_id(event_id: str, cut_index: int) -> str:
     return f"{event_id}|c{cut_index}"
 
 
+def _jsonl_bytes(path: Path) -> bytes:
+    """A jsonl file's bytes, the form the jsonl readers below are handed: given a path, Polars
+    reads it as a pattern and expands its [ ], * and ?, and a task id, so a record's file name,
+    may hold them (tau2's telecom ids, "[mms_issue]...[PERSONA:Hard]")."""
+    return path.read_bytes()
+
+
 def _file_schema(path: Path) -> dict[str, pl.DataType]:
     """Read a file's own schema without reading its data."""
     if path.suffix == ".parquet":
         return dict(pl.read_parquet_schema(path))
-    return dict(pl.scan_ndjson(path, infer_schema_length=None).collect_schema())
+    return dict(pl.scan_ndjson(_jsonl_bytes(path), infer_schema_length=None).collect_schema())
 
 
 def _recorded_version(path: Path, present: dict[str, pl.DataType]) -> int:
@@ -37,7 +44,7 @@ def _recorded_version(path: Path, present: dict[str, pl.DataType]) -> int:
     if path.suffix == ".parquet":
         column = pl.read_parquet(path, columns=["version"])["version"]
     else:
-        column = pl.read_ndjson(path, schema={"version": present["version"]})["version"]
+        column = pl.read_ndjson(_jsonl_bytes(path), schema={"version": present["version"]})["version"]
     column = column.drop_nulls()
     if column.len() == 0:
         return 0
@@ -89,7 +96,7 @@ def read_frame(
         if path.suffix == ".parquet":
             df = pl.read_parquet(path, columns=list(present)).cast(present, strict=True)
         else:
-            df = pl.read_ndjson(path, schema=present)
+            df = pl.read_ndjson(_jsonl_bytes(path), schema=present)
     except (pl.exceptions.ComputeError, pl.exceptions.InvalidOperationError) as exc:
         raise ValueError(f"{path}: column holds a value its declared type cannot hold: {exc}") from exc
 
