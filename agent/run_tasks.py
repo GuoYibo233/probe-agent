@@ -44,6 +44,19 @@ class _ServiceGone(Exception):
     """The agent server or the probe service stopped answering, after the client's own retries."""
 
 
+def _served(call, *args):
+    """`call(*args)` for a call that reaches a service: the agent server, the probe service, or an
+    environment that asks the agent server for the other party's turns (tau2's customer and its
+    judge); a failure that says the service stopped answering is raised as _ServiceGone, every
+    other exception as it is."""
+    try:
+        return call(*args)
+    except Exception as exc:
+        if _is_connection_failure(exc):
+            raise _ServiceGone(f"{type(exc).__name__}: {exc}") from exc
+        raise
+
+
 def _is_connection_failure(exc: Exception) -> bool:
     """True when exc says a service failed, as opposed to this task: no connection, a timeout, a broken stream, or an HTTP status other than 400 (400 is the agent server's context overflow, one task's own failure). The agent client raises the HTTPError itself; the probe client raises RuntimeError from the HTTPError its service answered with, so the status is read off the cause there."""
     status = exc if isinstance(exc, urllib.error.HTTPError) else exc.__cause__
@@ -142,7 +155,7 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
         date = cfg.generation.date
         t0 = time.clock_gettime(time.CLOCK_MONOTONIC)
         try:
-            env.open(task_id, seed)
+            _served(env.open, task_id, seed)
             task_text = env.task_text
             # The model is told the task's own date; the pinned generation.date is for a
             # benchmark whose tasks carry none. With the pinned date on an AppWorld task the
@@ -160,22 +173,15 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
                         writer.frame(), step_index, task_text,
                         instructions, env.NO_CODE_MESSAGE, extra,
                     )
-                    # the two calls that reach a service; the clients have already retried
-                    try:
-                        prefix_ids = clients.probe.render(
-                            messages, cfg.generation.effort, date
-                        )["prefix_ids"]
-                        res = gen_step(env, clients, cfg, writer, messages, prefix_ids, history,
-                                       task_text, step_index, seed)
-                    except Exception as exc:
-                        if _is_connection_failure(exc):
-                            raise _ServiceGone(f"{type(exc).__name__}: {exc}") from exc
-                        raise
+                    # the calls that reach a service; the clients have already retried
+                    prefix_ids = _served(clients.probe.render, messages, cfg.generation.effort, date)["prefix_ids"]
+                    res = _served(gen_step, env, clients, cfg, writer, messages, prefix_ids, history,
+                                  task_text, step_index, seed)
                     writer.row("gen", step=step_index, **dataclasses.asdict(res))
                     tokens_in += res.usage.get("in", 0)
                     tokens_out += res.usage.get("out", 0)
 
-                    obs = env.step(res.content)
+                    obs = _served(env.step, res.content)
                     writer.row("env", step=step_index, action=obs.action,
                               result=obs.observation, error_kind=obs.error_kind)
                     steps_done = step_index + 1
@@ -189,7 +195,7 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
                     raise
                 abort = "context_overflow_400"
 
-            judge = env.judge()
+            judge = _served(env.judge)
             t1 = time.clock_gettime(time.CLOCK_MONOTONIC)
             writer.row(
                 "final", steps=steps_done, completed=completed, abort=abort,

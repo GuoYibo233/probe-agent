@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import copy
 import json
 import os
@@ -206,6 +207,27 @@ def _tool_call_arguments(call: ast.Call) -> dict:
             raise ValueError(f"{call.func.id}: a ** splat")
         out[k.arg] = _value(k.value)
     return out
+
+
+@contextlib.contextmanager
+def _agent_server_failures():
+    """Raise litellm's failures that mean the agent model's server stopped answering as the
+    builtin errors agent/run_tasks.py reads as a service gone, so the piece ends and the task
+    runs again on the next launch: no connection or a timeout, or an HTTP status other than 400
+    (400 is one request's own failure). litellm's own errors subclass neither builtin, and
+    without this a dead server failed every remaining task of a piece for good."""
+    import openai
+    try:
+        yield
+    except openai.APITimeoutError as exc:
+        raise TimeoutError(f"tau2: the agent server timed out: {exc}") from exc
+    except openai.APIConnectionError as exc:
+        raise ConnectionError(f"tau2: no connection to the agent server: {exc}") from exc
+    except openai.APIError as exc:
+        status = getattr(exc, "status_code", None)
+        if isinstance(status, int) and status != 400:
+            raise ConnectionError(f"tau2: the agent server answered HTTP {status}: {exc}") from exc
+        raise
 
 
 def _char_offset(source: str, lineno: int, col_offset: int) -> int:
@@ -435,8 +457,9 @@ class Tau2(Environment):
         # the agent's greeting goes to the user, and the user's first message is the task.
         orch._run_start_time = t.get_now()
         orch._run_start_perf = time.perf_counter()
-        orch.initialize()
-        self._advance()
+        with _agent_server_failures():
+            orch.initialize()
+            self._advance()
         if orch.done:
             raise RuntimeError(f"tau2.open: the conversation of {task_id} ended before the agent's first turn "
                                f"({orch.termination_reason})")
@@ -494,9 +517,10 @@ class Tau2(Environment):
             action = calls_source
 
         orch.agent.pending = message
-        orch.step()
-        orch._check_termination()
-        self._advance()
+        with _agent_server_failures():
+            orch.step()
+            orch._check_termination()
+            self._advance()
 
         delivered = orch.message
         error_kind = None
@@ -554,7 +578,7 @@ class Tau2(Environment):
                 "error_kind": error_kind, "spec_s": spec_s}
 
     def judge(self) -> dict:
-        """tau2's own reward of the conversation (EvaluationType.ALL: database, actions, communicated values; no LLM judge); success is tau2's is_successful(reward)."""
+        """tau2's own reward of the conversation (EvaluationType.ALL: database, actions, communicated values, and for a task that carries NL assertions (40 retail tasks) their verdict by the agent model on its own server in place of tau2's gpt-4.1); success is tau2's is_successful(reward). A judge request the agent server no longer answers ends the piece like any service failure."""
         try:
             t = _load(self.data)
             orch = self._orch
@@ -565,13 +589,16 @@ class Tau2(Environment):
             simulation = orch._finalize()
             self._finalized = True
             simulation.policy = orch.environment.get_policy()
-            reward_info = t.evaluate_simulation(
-                simulation=simulation, task=self._task, evaluation_type=t.EvaluationType.ALL,
-                solo_mode=False, domain=self._domain, env_kwargs=self._env_kwargs,
-            )
+            with _agent_server_failures():
+                reward_info = t.evaluate_simulation(
+                    simulation=simulation, task=self._task, evaluation_type=t.EvaluationType.ALL,
+                    solo_mode=False, domain=self._domain, env_kwargs=self._env_kwargs,
+                )
             return {"success": bool(t.is_successful(reward_info.reward)), "reward": reward_info.reward,
                     "termination_reason": str(simulation.termination_reason),
                     "reward_info": reward_info.model_dump(mode="json")}
+        except (ConnectionError, TimeoutError):
+            raise
         except Exception as exc:
             return {"success": False, "eval_error": f"{type(exc).__name__}: {exc}"[:600]}
 

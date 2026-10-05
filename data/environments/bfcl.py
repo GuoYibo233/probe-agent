@@ -107,7 +107,9 @@ def _decoded(text: str) -> tuple[str, int, list[ast.Call]] | None:
 
     Returns the wrapped source, the index in `text` where the source's first character sits
     (one less when an opening bracket was added), and the calls; None when the text is no such
-    list, an empty list included.
+    list, an empty list included. A call to a dotted name (fs.ls()) counts as no call: BFCL's
+    decoder reads it, but every function of the benchmark has a bare name, so the build skips
+    such a step.
     """
     raw = text or ""
     stripped = raw.strip(STRIP_CHARS)
@@ -323,7 +325,15 @@ class BFCL(Environment):
         return out[:self.RESULT_CAP] + CUT_NOTE.format(n=len(out) - self.RESULT_CAP)
 
     def step(self, reply_text: str) -> StepObservation:
-        """One model reply, as one step of BFCL's inference_multi_turn_prompting: calls are run and their results returned; a reply that decodes to no call ends the user's turn and the next turn's message comes back, or the task ends after the last turn; more than MAXIMUM_STEP_LIMIT steps in one turn end the task."""
+        """One model reply, as one step of BFCL's inference_multi_turn_prompting: calls are run and their results returned; a reply that decodes to no call ends the user's turn and the next turn's message comes back, or the task ends after the last turn; more than MAXIMUM_STEP_LIMIT steps in one turn end the task.
+
+        Two differences from BFCL's harness. The results come back as one user message in BFCL's
+        API-prompting form (format_execution_results_prompting), because this loop's
+        conversation holds no tool role, where BFCL's handler for a locally served model appends
+        one tool message per result. And the loop's own step cap (sample.max_steps) can end a
+        task BFCL would continue: judge then scores the turns reached, a partial last turn as a
+        turn, so a setting gives the cap room for every turn (100 in the test settings).
+        """
         b = _load(self.home)
         self._responses[self._turn].append(reply_text)
         action = (reply_text or "").strip()
