@@ -85,6 +85,22 @@ def read_report(run_dir: Path) -> tuple[dict, pl.DataFrame | None]:
     return fields, fires
 
 
+def fired_example_ids(run_dir: Path) -> set[str]:
+    """The example ids a classifier eval run fired on, over every risk target: the rows the generator report scores, so the rows a generator's train run writes calls for. Refuses an eval run with no done.json, a report that is not a classifier's, and an imported classifier eval, which holds no fired rows."""
+    run_dir = Path(run_dir)
+    if not (run_dir / "done.json").exists():
+        raise ValueError(f"{run_dir}: the classifier eval has no done.json")
+    fields, fires = read_report(run_dir)
+    if fields.get("probe_kind") != "classifier":
+        raise ValueError(
+            f"{run_dir}: a {fields.get('probe_kind')!r} report; the fired rows come from a classifier eval")
+    if fields.get("imported"):
+        raise ValueError(
+            f"{run_dir}: an import of {fields.get('imported_from')} holds no fired rows; name a "
+            "fitted classifier eval")
+    return set(fires["example_id"].to_list()) if fires is not None else set()
+
+
 def softmax(logits: "np.ndarray", temperature: float) -> "np.ndarray":
     """Softmax over the last axis of logits / temperature, numerically stabilised by subtracting the row max."""
     scaled = np.asarray(logits, dtype=np.float64) / temperature

@@ -261,7 +261,13 @@ STAGES = {
   "train": {
     "sections": ("models.probe", "probe", "train"),
     "models": ("probe",),
-    "upstream": ({"name": "build", "source": "same", "stage": "build", "key": "fold"},),
+    # A generator's train run also folds in the classifier eval its eval.theta_from names: its
+    # prediction step writes calls only for the rows that eval fired on, the rows the generator
+    # report scores (2026-10-05; writing every row of a full-history build was about a million
+    # generations per weight copy against about 12,000 the report reads).
+    "upstream": ({"name": "build", "source": "same", "stage": "build", "key": "fold"},
+                 {"name": "theta_from.eval", "source": "ref:eval.theta_from",
+                  "stage": "eval", "key": "fold", "when": "generator"}),
     "program": "train.methods.{method}",
     "venv": "probe",
     "pieces": (("train", 1, None),),

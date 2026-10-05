@@ -223,5 +223,42 @@ class ClassifierReportTest(unittest.TestCase):
         self.assertEqual(pe.report_passes("ctool", _cfg(risk=(0.1, 0.1))), len(THETA_GRID) + 3)
 
 
+class FiredExampleIdsTest(unittest.TestCase):
+    """The rows a generator's train run writes calls for are the rows its classifier eval fired
+    on, over every risk target, and nothing else."""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _eval_dir(self, fields: dict, fires, done: bool = True) -> Path:
+        d = self.dir / f"eval{len(list(self.dir.iterdir()))}"
+        d.mkdir()
+        pe.write_report(d, fields, fires)
+        if done:
+            (d / "done.json").write_text("{}")
+        return d
+
+    def test_the_fired_rows_of_every_risk_target(self):
+        fields, fires = pe.report_classifier("ctool", _predictions(), _cfg(), None, LABELS, _Beats())
+        d = self._eval_dir({**fields, "probe_kind": "classifier"}, fires)
+        self.assertEqual(pe.fired_example_ids(d), set(fires["example_id"].to_list()))
+        self.assertGreater(len(pe.fired_example_ids(d)), 0)
+
+    def test_refusals(self):
+        fields, fires = pe.report_classifier("ctool", _predictions(), _cfg(), None, LABELS, _Beats())
+        with self.assertRaisesRegex(ValueError, "done.json"):
+            pe.fired_example_ids(self._eval_dir({**fields, "probe_kind": "classifier"}, fires, done=False))
+        with self.assertRaisesRegex(ValueError, "classifier eval"):
+            pe.fired_example_ids(self._eval_dir({"probe_kind": "generator"}, None))
+        with self.assertRaisesRegex(ValueError, "no fired rows"):
+            pe.fired_example_ids(self._eval_dir(
+                {"probe_kind": "classifier", "imported": True, "imported_from": "/old/run"}, None))
+
+
 if __name__ == "__main__":
     unittest.main()
