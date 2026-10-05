@@ -263,3 +263,11 @@
   why: Since 0a81553 the record reader hands Polars a jsonl file's bytes instead of its path, so a file
     name holding [ ] is no longer expanded as a pattern; every record that read before reads to the same
     frame, and a sample run writes its records as it did
+- stage: build
+  era: 4
+  from: 0a81553d638cf17a12c411e7b63fdd55ab245e46
+  same: 270b8bbf4977c1091586b01d6dd07324ff0de108
+  date: 2026-10-05
+  why: Since 0a81553 the record reader hands Polars a jsonl file's bytes instead of its path, so a file
+    name holding [ ] is no longer expanded as a pattern; every record that read before reads to the same
+    frame, so a build writes the same examples
