@@ -255,3 +255,30 @@
     field name, which a sample run never applies (the budget cuts probe texts on the inject side and in
     the build), and in the probe service's launch check fixture, now the agent family's own stop token;
     a sample run's records are unchanged (the collection 363859498f89)
+- stage: train
+  era: 2
+  from: 050a8fa983cc2c2ec5ef12b058d9231c70dc39d7
+  same: eba935493148acf2cca34823bdb3469b7f0a3c29
+  date: 2026-10-05
+  why: The one change since 050a8fa keeps only the test-split rows among the fired rows a generator's
+    train run writes calls for; a classifier train, an eval and an inject run never call it, and the only
+    generator train made under 050a8fa (debug cd96d5598d1d) had a classifier eval with no fired rows,
+    so every run made under 050a8fa is what HEAD produces
+- stage: eval
+  era: 2
+  from: 050a8fa983cc2c2ec5ef12b058d9231c70dc39d7
+  same: eba935493148acf2cca34823bdb3469b7f0a3c29
+  date: 2026-10-05
+  why: The one change since 050a8fa keeps only the test-split rows among the fired rows a generator's
+    train run writes calls for; a classifier train, an eval and an inject run never call it, and the only
+    generator train made under 050a8fa (debug cd96d5598d1d) had a classifier eval with no fired rows,
+    so every run made under 050a8fa is what HEAD produces
+- stage: inject
+  era: 4
+  from: 050a8fa983cc2c2ec5ef12b058d9231c70dc39d7
+  same: eba935493148acf2cca34823bdb3469b7f0a3c29
+  date: 2026-10-05
+  why: The one change since 050a8fa keeps only the test-split rows among the fired rows a generator's
+    train run writes calls for; a classifier train, an eval and an inject run never call it, and the only
+    generator train made under 050a8fa (debug cd96d5598d1d) had a classifier eval with no fired rows,
+    so every run made under 050a8fa is what HEAD produces
