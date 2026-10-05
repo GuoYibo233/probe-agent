@@ -306,3 +306,20 @@
   why: The one change since 32e5612 holds the eval's prediction-file columns row by row instead of requiring
     at least one row; every eval that finished under 32e5612 reads the same report, a prediction file
     with no rows was refused and is now reported, and train and inject never run this check
+- stage: train
+  era: 2
+  from: 768b70e661eaea86ef4652588b2f639818236ae9
+  same: 2be6ffa710066238fcba51db3f458057ca80fe30
+  date: 2026-10-05
+  why: Since 768b70e the trainer reads a classifier eval's fired test rows only for a run whose upstream
+    map folds one in (a generator, by the stage table change of 8106799), and probe_eval gained the fired-row
+    reader and a row-by-row column check; a classifier's train run, such as 125f0bd29777, writes the same
+    checkpoints and prediction rows
+- stage: eval
+  era: 2
+  from: 3a4a30177705eacbe61f93ddbb503412f34ce202
+  same: 2be6ffa710066238fcba51db3f458057ca80fe30
+  date: 2026-10-05
+  why: Since 3a4a301 probe_eval gained the fired-row reader a generator's train run calls and holds the
+    prediction-file columns row by row; a classifier eval over a non-empty prediction file, such as 4319ab69d9c3,
+    writes the same report and fired rows
