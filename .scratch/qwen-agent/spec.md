@@ -361,6 +361,20 @@ Qwen3.6-35B-A3B real chain has not been started.
   hand at 00:20 JST on 2026-10-06. Open: wait for tokyo108's NFS client to release the
   page (the 2026-10-01 processes cleared on their own, time unknown), or an administrator
   remounts or reboots tokyo108, which also ends the gpt-oss training on card 0.
+- 2026-10-06 00:42 JST, gyb's ruling: bypass the stuck lock. `jobs/runs.jsonl.lock` was
+  renamed to `jobs/runs.jsonl.stuck-2026-10-05.lock` (a flock sits on the inode, so the
+  frozen process keeps the old one and every new `run.py` takes a fresh file; the first
+  name tried, `...lock.stuck-2026-10-05`, tripped the dirty-tree gate because only `*.lock`
+  is ignored). The frozen kill (pid 4169497) was left alone.
+- 00:43 JST: relaunched on cards 1 and 2 (`run.py: launched sample-62d6f3de27bf`). Eleven
+  loops found their records finished and ended at once; loop piece 1 redoes
+  `e3d6c94_2` seed 42 (1575 record files on disk). The new server on card 1 writes a fresh
+  `log/12.txt` to the same disk, so the fault can recur; gyb asks the administrator for a
+  remount separately.
+- Expected later: when the frozen kill unfreezes it appends a stale `killed` finish row
+  for this run under the old lock; if `run.py ls` then shows the run as killed, the
+  wrap-up command is run once more and re-certifies it (a new `ok` row; nothing is edited
+  by hand).
 
 ### 5.4 Open points for gyb on these two
 
