@@ -21,7 +21,8 @@ class StepObservation:
 
 class Environment:
     """A benchmark that hands out tasks, steps, can try a call early and undo
-    it, says which calls change its world, and judges."""
+    it, says which calls change its world, and judges; it writes the open
+    task's developer message and may hold the agent server's endpoint."""
 
     NAME: str
     INSTRUCTIONS: dict[str, str]
@@ -63,6 +64,24 @@ class Environment:
 
     def complete_call(self, text: str) -> str | None:
         raise NotImplementedError("complete_call")
+
+    def instructions(self, variant: str) -> str:
+        """The developer message of the open task under the setting's data.instructions variant.
+
+        A benchmark whose message is one text for every task sends INSTRUCTIONS[variant] as it
+        is (AppWorld); a benchmark whose message carries the open task's own policy or function
+        list overrides this and fills the variant's template from the open task.
+        """
+        return self.INSTRUCTIONS[variant]
+
+    def bind_agent(self, base_url: str, served_model_name: str) -> None:
+        """Take the OpenAI-compatible endpoint of the agent model's server, before the first open.
+
+        A benchmark that simulates the other party of a conversation (tau2's customer) keeps it
+        and asks that server for the other party's turns; a benchmark whose tasks hold no
+        simulated party has no use for it.
+        """
+        del base_url, served_model_name
 
 
 def open_env(name: str, *, result_cap: int | None = None) -> Environment:

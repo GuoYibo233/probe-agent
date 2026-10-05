@@ -6,6 +6,8 @@ venvs:                                  # every interpreter this repo starts a p
   appworld: /home/y-guo/reproduce/new1/external/appworld/venv/bin/python
   probe:    /home/y-guo/reproduce/new1/external/probe-env/bin/python
   vllm:     /home/y-guo/reproduce/new1/external/vllm-env/bin/python
+  tau2:     /home/y-guo/reproduce/new1/external/tau2-bench/.venv/bin/python
+  bfcl:     /home/y-guo/reproduce/new1/external/bfcl/venv/bin/python
 
 appworld:
   home:  /home/y-guo/reproduce/new1/external/appworld
@@ -15,3 +17,31 @@ appworld:
     train: /home/y-guo/reproduce/new1/external/appworld/data/datasets/train.txt
     dev:   /home/y-guo/reproduce/new1/external/appworld/data/datasets/dev.txt
     test:  /home/y-guo/reproduce/new1/external/appworld/data/datasets/test_normal.txt
+
+# The sierra-research/tau2-bench clone (tau2 1.0.1, commit 1d244f5), installed editable in its
+# own .venv; data is tau2's DATA_DIR. Each domain's official split file holds its train and test
+# task ids (split_tasks.json), so both splits of a domain name the same file.
+tau2:
+  home:  /home/y-guo/reproduce/new1/external/tau2-bench
+  venv:  tau2
+  data:  /home/y-guo/reproduce/new1/external/tau2-bench/data
+  splits:
+    airline_train: /home/y-guo/reproduce/new1/external/tau2-bench/data/tau2/domains/airline/split_tasks.json
+    airline_test:  /home/y-guo/reproduce/new1/external/tau2-bench/data/tau2/domains/airline/split_tasks.json
+    retail_train:  /home/y-guo/reproduce/new1/external/tau2-bench/data/tau2/domains/retail/split_tasks.json
+    retail_test:   /home/y-guo/reproduce/new1/external/tau2-bench/data/tau2/domains/retail/split_tasks.json
+    telecom_train: /home/y-guo/reproduce/new1/external/tau2-bench/data/tau2/domains/telecom/split_tasks.json
+    telecom_test:  /home/y-guo/reproduce/new1/external/tau2-bench/data/tau2/domains/telecom/split_tasks.json
+
+# The bfcl-eval package (2026.3.23) in its own venv; home is BFCL_PROJECT_ROOT (its result/,
+# score/ and lock directories), data is the package's data directory, and a split is one
+# multi-turn category's question file (one JSON object per line).
+bfcl:
+  home:  /home/y-guo/reproduce/new1/external/bfcl
+  venv:  bfcl
+  data:  /home/y-guo/reproduce/new1/external/bfcl/venv/lib/python3.11/site-packages/bfcl_eval/data
+  splits:
+    multi_turn_base:         /home/y-guo/reproduce/new1/external/bfcl/venv/lib/python3.11/site-packages/bfcl_eval/data/BFCL_v4_multi_turn_base.json
+    multi_turn_miss_func:    /home/y-guo/reproduce/new1/external/bfcl/venv/lib/python3.11/site-packages/bfcl_eval/data/BFCL_v4_multi_turn_miss_func.json
+    multi_turn_miss_param:   /home/y-guo/reproduce/new1/external/bfcl/venv/lib/python3.11/site-packages/bfcl_eval/data/BFCL_v4_multi_turn_miss_param.json
+    multi_turn_long_context: /home/y-guo/reproduce/new1/external/bfcl/venv/lib/python3.11/site-packages/bfcl_eval/data/BFCL_v4_multi_turn_long_context.json

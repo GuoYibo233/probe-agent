@@ -1,7 +1,8 @@
 """The environment contract as the build uses it, with no AppWorld world held: every call
 `build_call` writes parses back through `split_args` to the same tool and arguments (the round-trip
-gate of 2.5), `requested_pairs` picks tasks in split, file and seed order, and the build's split
-and weight rules give the values the setting names."""
+gate of 2.5), `requested_pairs` picks tasks in split, file and seed order, the build's split
+and weight rules give the values the setting names, the contract's two defaults hold, and tau2's and
+bfcl's call syntax reads and rebuilds calls the way their own harnesses do."""
 # venv: probe
 from __future__ import annotations
 
@@ -197,6 +198,121 @@ class ChangesStateTest(unittest.TestCase):
         env = open_env("appworld")
         with self.assertRaises(RuntimeError):
             env.changes_state("apis.spotify.show_song(song_id=3)")
+
+
+class ContractDefaultsTest(unittest.TestCase):
+    """The two contract methods with defaults: a benchmark whose developer message is one text
+    sends INSTRUCTIONS[variant] as it stands, and one with no simulated party keeps no endpoint."""
+
+    def test_appworld_sends_its_instructions_as_they_stand(self):
+        env = open_env("appworld")
+        for variant in env.INSTRUCTIONS:
+            self.assertEqual(env.instructions(variant), env.INSTRUCTIONS[variant])
+        self.assertIsNone(env.bind_agent("http://h:1/v1", "m"))
+
+    def test_the_new_benchmarks_hold_the_contract(self):
+        for name in ("tau2", "bfcl"):
+            env = open_env(name)
+            for attr in ("NAME", "INSTRUCTIONS", "NO_CODE_MESSAGE", "RESULT_CAP", "SEED", "SPLIT_ROLE"):
+                self.assertTrue(hasattr(env, attr), (name, attr))
+            self.assertEqual(env.NAME, name)
+            self.assertLessEqual(set(env.SPLIT_ROLE.values()), {"train", "val", "test"})
+            with self.assertRaises(RuntimeError):
+                env.instructions("v1")
+
+
+class Tau2CallSyntaxTest(unittest.TestCase):
+    """tau2's text form of a tool call: the whole reply is one call (or a list of calls) to a bare
+    name with JSON values; anything else is a message to the user."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.env = open_env("tau2")
+
+    def test_a_reply_that_is_a_call_is_read_and_a_message_is_not(self):
+        tool, args, (start, end) = self.env.split_args('get_user_details(user_id="sara_doe_496")')
+        self.assertEqual((tool, args), ("get_user_details", [("user_id", '"sara_doe_496"')]))
+        fenced = "```json\nget_order_details(order_id='#W1')\n```"
+        tool, args, (start, end) = self.env.split_args(fenced)
+        self.assertEqual((tool, args), ("get_order_details", [("order_id", '"#W1"')]))
+        self.assertEqual(fenced[start:end], "get_order_details(order_id='#W1')")
+        self.assertEqual(self.env.split_args("[think(thought='a'), think(thought='b')]")[1], [("thought", '"a"')])
+        for message in ("Sure, I can help(you) with that.", "Hello", "", None, "get_user_details(user_id='x'",
+                        "Your total is calculate(1).", "[NO RESPONSE]", "[ ]", "The options are [1, 2]."):
+            self.assertIsNone(self.env.split_args(message), message)
+
+    def test_the_turn_ends_at_the_first_call_list(self):
+        """Text around a call list: the first list of calls is the call, as a native function
+        call ends the model's turn; what comes after it is never read."""
+        mixed = ('We need to look it up.\n[NO RESPONSE]\n[ get_reservation_details(reservation_id="EHGLP3") ]\n'
+                 '[NO RESPONSE]\n[cancel_reservation(reservation_id="EHGLP3")]')
+        tool, args, (start, end) = self.env.split_args(mixed)
+        self.assertEqual((tool, args), ("get_reservation_details", [("reservation_id", '"EHGLP3"')]))
+        self.assertEqual(mixed[start:end], 'get_reservation_details(reservation_id="EHGLP3")')
+        nested = "[f(x=[1, 2], y='a]b'), g()] and then more text"
+        self.assertEqual(self.env.split_args(nested)[:2], ("f", [("x", "[1, 2]"), ("y", '"a]b"')]))
+
+    def test_values_read_as_one_json_text(self):
+        """The same value written two ways reads the same: quotes, JSON's true/false/null and
+        Python's True/False/None, tuples and lists."""
+        a = self.env.split_args("f(x='v', y=True, z=None, w=(1, 2))")[1]
+        b = self.env.split_args('f(x="v", y=true, z=null, w=[1, 2])')[1]
+        self.assertEqual(a, b)
+        self.assertEqual(a, [("x", '"v"'), ("y", "true"), ("z", "null"), ("w", "[1, 2]")])
+
+    def test_build_call_round_trips_what_split_args_reads(self):
+        for call in ('book_reservation(user_id="a", passengers=[{"first_name": "A", "dob": null}], insurance="no")',
+                     "think()", "calculate(expression='(2 + 3) * 4')", 'f(text="it\'s \\"quoted\\"")',
+                     "f(x=some_name)", "f(1, k=2)"):
+            with self.subTest(call=call):
+                tool, args, _ = self.env.split_args(call)
+                rebuilt = self.env.build_call(tool, args)
+                self.assertEqual(self.env.split_args(rebuilt)[:2], (tool, args))
+        with self.assertRaises(ValueError):
+            self.env.build_call("f", [("x", "(")])
+
+    def test_complete_call_and_the_open_task_rule(self):
+        self.assertEqual(self.env.complete_call("get_x(a='b)') and more"), "get_x(a='b)')")
+        self.assertIsNone(self.env.complete_call("get_x(a="))
+        with self.assertRaises(RuntimeError):
+            self.env.changes_state("cancel_reservation(reservation_id='X')")
+
+
+class BFCLCallSyntaxTest(unittest.TestCase):
+    """BFCL's prompting-mode call format, read the way its decoder reads a reply."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.env = open_env("bfcl")
+
+    def test_split_args_follows_the_official_decoder(self):
+        """Ends stripped of backticks, newlines and spaces, a missing bracket added, keyword
+        arguments only (the decoder drops a positional one, so sort('a') runs as sort())."""
+        text = "[cd(folder='document'), mkdir(dir_name='temp')]"
+        tool, args, (start, end) = self.env.split_args(text)
+        self.assertEqual((tool, args), ("cd", [("folder", "'document'")]))
+        self.assertEqual(text[start:end], "cd(folder='document')")
+        fenced = "```\n[ls(a=True)]\n```"
+        tool, args, (start, end) = self.env.split_args(fenced)
+        self.assertEqual((tool, args, fenced[start:end]), ("ls", [("a", "True")], "ls(a=True)"))
+        self.assertEqual(self.env.split_args("sort('final_report.pdf')")[:2], ("sort", []))
+        self.assertEqual(self.env.split_args('cd(folder="x")')[1], self.env.split_args("cd(folder='x')")[1])
+        for no_call in ("I have finished the task.", "[]", "", None, "```python\n[ls()]\n```"):
+            self.assertIsNone(self.env.split_args(no_call), no_call)
+
+    def test_build_call_round_trips_what_split_args_reads(self):
+        for call in ("post_tweet(content='hi, all', tags=['#a', '#b'], mentions=[])", "pwd()",
+                     "echo(content='a\\nb', file_name='x.txt')", "f(x=g(1))"):
+            with self.subTest(call=call):
+                tool, args, _ = self.env.split_args(call)
+                self.assertEqual(self.env.split_args(self.env.build_call(tool, args))[:2], (tool, args))
+
+    def test_changes_state_reads_the_write_table(self):
+        self.assertTrue(self.env.changes_state("cd()"))
+        self.assertTrue(self.env.changes_state("[get_flight_cost(travel_from='A', travel_to='B')]"))
+        self.assertFalse(self.env.changes_state("ls()"))
+        self.assertFalse(self.env.changes_state("I will now stop."))
+        self.assertEqual(self.env.complete_call("[cd(folder='a)b'), ls()]"), "cd(folder='a)b')")
 
 
 class _FakeEnv:

@@ -1,0 +1,83 @@
+# Draft workflow (agent-written, 2026-10-05): the end-to-end test of the two new benchmark
+# environments, tau2-bench (data/environments/tau2.py) and BFCL multi-turn
+# (data/environments/bfcl.py). Collect trajectories, build the probe examples, train a probe,
+# evaluate it; walked with --debug, so six steps per task and the tasks named below.
+# The agent model is Qwen3.6-35B-A3B because no tokyo108 card was free for gpt-oss-120b on
+# 2026-10-05; the walk attaches to the live server of the running Qwen3.6 collection.
+# Neither benchmark has an official validation split (tau2 has train and test, BFCL is an
+# evaluation set), so the build splits tasks by the stable hash rule, and the tasks are the
+# first of each split whose hash role gives the test train, val and test examples.
+workflow: [sample, build, train, eval]
+
+common:
+  models:     {agent: qwen3pt6_35b_a3b, probe: qwen3_0pt6b}
+  generation: {temperature: 1.0}
+  build:      {split_source: hash}
+
+tau2_test_2026_10_05_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "tau2 end-to-end test: classification probe on Qwen3.6-35B-A3B trajectories of 18 tasks over the three domains' train and test splits"}
+  data:   {env: tau2, instructions: v1}
+  sample:
+    split: [airline_train, airline_test, retail_train, retail_test, telecom_train, telecom_test]
+    seeds: [42]
+    tasks: ["airline_14", "airline_0", "airline_1", "airline_8", "airline_22", "airline_2",
+            "retail_8", "retail_0", "retail_1", "retail_5", "retail_12", "retail_17",
+            "telecom_[mms_issue]airplane_mode_on|bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_both_permissions|data_mode_off|data_usage_exceeded|unseat_sim_card|user_abroad_roaming_disabled_off[PERSONA:Hard]",
+            "telecom_[mms_issue]airplane_mode_on|bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_both_permissions|data_mode_off|data_usage_exceeded|unseat_sim_card|user_abroad_roaming_disabled_on[PERSONA:Hard]",
+            "telecom_[mms_issue]airplane_mode_on|bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_sms_permission|data_mode_off|data_usage_exceeded|unseat_sim_card|user_abroad_roaming_enabled_off[PERSONA:None]",
+            "telecom_[mms_issue]airplane_mode_on|bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_both_permissions|unseat_sim_card|user_abroad_roaming_enabled_off[PERSONA:Hard]",
+            "telecom_[mms_issue]airplane_mode_on|bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_sms_permission|data_mode_off|data_usage_exceeded|unseat_sim_card|user_abroad_roaming_disabled_on[PERSONA:None]",
+            "telecom_[mms_issue]airplane_mode_on|bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_storage_permission|data_mode_off|data_usage_exceeded|unseat_sim_card|user_abroad_roaming_disabled_on[PERSONA:Easy]"]
+    pieces: 6
+    replicas: 1
+  probe:  {method: ctool, tuning: full}
+
+tau2_test_2026_10_05_cgen_qwen3_0pt6b_full:
+  meta:   {notes: "tau2 end-to-end test: call-generating probe on the same trajectories"}
+  data:   {env: tau2, instructions: v1}
+  sample:
+    split: [airline_train, airline_test, retail_train, retail_test, telecom_train, telecom_test]
+    seeds: [42]
+    tasks: ["airline_14", "airline_0", "airline_1", "airline_8", "airline_22", "airline_2",
+            "retail_8", "retail_0", "retail_1", "retail_5", "retail_12", "retail_17",
+            "telecom_[mms_issue]airplane_mode_on|bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_both_permissions|data_mode_off|data_usage_exceeded|unseat_sim_card|user_abroad_roaming_disabled_off[PERSONA:Hard]",
+            "telecom_[mms_issue]airplane_mode_on|bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_both_permissions|data_mode_off|data_usage_exceeded|unseat_sim_card|user_abroad_roaming_disabled_on[PERSONA:Hard]",
+            "telecom_[mms_issue]airplane_mode_on|bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_sms_permission|data_mode_off|data_usage_exceeded|unseat_sim_card|user_abroad_roaming_enabled_off[PERSONA:None]",
+            "telecom_[mms_issue]airplane_mode_on|bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_both_permissions|unseat_sim_card|user_abroad_roaming_enabled_off[PERSONA:Hard]",
+            "telecom_[mms_issue]airplane_mode_on|bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_sms_permission|data_mode_off|data_usage_exceeded|unseat_sim_card|user_abroad_roaming_disabled_on[PERSONA:None]",
+            "telecom_[mms_issue]airplane_mode_on|bad_network_preference|bad_wifi_calling|break_apn_mms_setting|break_app_storage_permission|data_mode_off|data_usage_exceeded|unseat_sim_card|user_abroad_roaming_disabled_on[PERSONA:Easy]"]
+    pieces: 6
+    replicas: 1
+  probe:  {method: cgen, tuning: full}
+  eval:   {theta_from: draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_ctool_qwen3_0pt6b_full}
+
+bfcl_test_2026_10_05_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "BFCL multi-turn end-to-end test: classification probe on Qwen3.6-35B-A3B trajectories of 12 tasks over the four categories"}
+  data:   {env: bfcl, instructions: v1}
+  sample:
+    split: [multi_turn_base, multi_turn_miss_func, multi_turn_miss_param, multi_turn_long_context]
+    seeds: [42]
+    tasks: ["multi_turn_base_3", "multi_turn_base_13", "multi_turn_base_0",
+            "multi_turn_miss_func_30", "multi_turn_miss_func_4", "multi_turn_miss_func_0",
+            "multi_turn_miss_param_0", "multi_turn_miss_param_1", "multi_turn_miss_param_2",
+            "multi_turn_long_context_0", "multi_turn_long_context_1", "multi_turn_long_context_2"]
+    max_steps: 100
+    pieces: 6
+    replicas: 1
+  probe:  {method: ctool, tuning: full}
+
+bfcl_test_2026_10_05_cgen_qwen3_0pt6b_full:
+  meta:   {notes: "BFCL multi-turn end-to-end test: call-generating probe on the same trajectories"}
+  data:   {env: bfcl, instructions: v1}
+  sample:
+    split: [multi_turn_base, multi_turn_miss_func, multi_turn_miss_param, multi_turn_long_context]
+    seeds: [42]
+    tasks: ["multi_turn_base_3", "multi_turn_base_13", "multi_turn_base_0",
+            "multi_turn_miss_func_30", "multi_turn_miss_func_4", "multi_turn_miss_func_0",
+            "multi_turn_miss_param_0", "multi_turn_miss_param_1", "multi_turn_miss_param_2",
+            "multi_turn_long_context_0", "multi_turn_long_context_1", "multi_turn_long_context_2"]
+    max_steps: 100
+    pieces: 6
+    replicas: 1
+  probe:  {method: cgen, tuning: full}
+  eval:   {theta_from: draft/tau2_and_bfcl_probe_test_2026_10_05/bfcl_test_2026_10_05_ctool_qwen3_0pt6b_full}

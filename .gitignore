@@ -12,6 +12,8 @@ external/bfcl
 external/probe-env
 external/tau2-bench
 external/vllm-env
+external/tau2-bench
+external/bfcl
 
 # third-party benchmark clones under envs/: each has its own .git, restored by clone
 envs/appworld/

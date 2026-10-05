@@ -1,0 +1,73 @@
+# Draft workflow (agent-written, 2026-10-05): the full-length test of the two new benchmark
+# environments on gpt-oss-120b, walked without --debug so conversations run to their own end
+# (30 steps for tau2, 100 for BFCL's several user turns). It tests what the debug walks left out:
+# tau2's NL-assertion judge on the agent model's own server (the eight retail tasks below each
+# carry NL assertions), conversations that end by the user's stop, and the probe chain on
+# gpt-oss trajectories. tau2 telecom is left out: its user simulator needs a tool-call parser
+# flag on the agent server (models/table.yaml). The tasks are chosen so the stable hash split
+# gives train, val and test tasks (neither benchmark has a validation split of its own).
+# Gradient checkpointing keeps the probe training inside a 47 GiB card.
+workflow: [sample, build, train, eval]
+
+common:
+  models: {agent: gpt_oss_120b, probe: qwen3_0pt6b}
+  build:  {split_source: hash}
+  train:  {grad_ckpt: true}
+
+tau2_full_length_test_2026_10_05_gpt_oss_120b_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "tau2 full-length test: classification probe on gpt-oss-120b trajectories of 8 airline and 8 retail tasks"}
+  data:   {env: tau2, instructions: v1}
+  sample:
+    split: [airline_train, airline_test, retail_train, retail_test]
+    seeds: [42]
+    tasks: ["airline_14", "airline_0", "airline_1", "airline_3", "airline_8", "airline_22", "airline_2", "airline_6",
+            "retail_54", "retail_107", "retail_2", "retail_3", "retail_36", "retail_38", "retail_39", "retail_45"]
+    max_steps: 30
+    pieces: 6
+    replicas: 1
+  probe:  {method: ctool, tuning: full}
+
+tau2_full_length_test_2026_10_05_gpt_oss_120b_cgen_qwen3_0pt6b_full:
+  meta:   {notes: "tau2 full-length test: call-generating probe on the same trajectories"}
+  data:   {env: tau2, instructions: v1}
+  sample:
+    split: [airline_train, airline_test, retail_train, retail_test]
+    seeds: [42]
+    tasks: ["airline_14", "airline_0", "airline_1", "airline_3", "airline_8", "airline_22", "airline_2", "airline_6",
+            "retail_54", "retail_107", "retail_2", "retail_3", "retail_36", "retail_38", "retail_39", "retail_45"]
+    max_steps: 30
+    pieces: 6
+    replicas: 1
+  probe:  {method: cgen, tuning: full}
+  eval:   {theta_from: draft/tau2_and_bfcl_full_length_probe_test_2026_10_05/tau2_full_length_test_2026_10_05_gpt_oss_120b_ctool_qwen3_0pt6b_full}
+
+bfcl_full_length_test_2026_10_05_gpt_oss_120b_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "BFCL multi-turn full-length test: classification probe on gpt-oss-120b trajectories of 12 tasks over the four categories"}
+  data:   {env: bfcl, instructions: v1}
+  sample:
+    split: [multi_turn_base, multi_turn_miss_func, multi_turn_miss_param, multi_turn_long_context]
+    seeds: [42]
+    tasks: ["multi_turn_base_3", "multi_turn_base_13", "multi_turn_base_0",
+            "multi_turn_miss_func_30", "multi_turn_miss_func_4", "multi_turn_miss_func_0",
+            "multi_turn_miss_param_0", "multi_turn_miss_param_1", "multi_turn_miss_param_2",
+            "multi_turn_long_context_0", "multi_turn_long_context_1", "multi_turn_long_context_2"]
+    max_steps: 100
+    pieces: 6
+    replicas: 1
+  probe:  {method: ctool, tuning: full}
+
+bfcl_full_length_test_2026_10_05_gpt_oss_120b_cgen_qwen3_0pt6b_full:
+  meta:   {notes: "BFCL multi-turn full-length test: call-generating probe on the same trajectories"}
+  data:   {env: bfcl, instructions: v1}
+  sample:
+    split: [multi_turn_base, multi_turn_miss_func, multi_turn_miss_param, multi_turn_long_context]
+    seeds: [42]
+    tasks: ["multi_turn_base_3", "multi_turn_base_13", "multi_turn_base_0",
+            "multi_turn_miss_func_30", "multi_turn_miss_func_4", "multi_turn_miss_func_0",
+            "multi_turn_miss_param_0", "multi_turn_miss_param_1", "multi_turn_miss_param_2",
+            "multi_turn_long_context_0", "multi_turn_long_context_1", "multi_turn_long_context_2"]
+    max_steps: 100
+    pieces: 6
+    replicas: 1
+  probe:  {method: cgen, tuning: full}
+  eval:   {theta_from: draft/tau2_and_bfcl_full_length_probe_test_2026_10_05/bfcl_full_length_test_2026_10_05_gpt_oss_120b_ctool_qwen3_0pt6b_full}

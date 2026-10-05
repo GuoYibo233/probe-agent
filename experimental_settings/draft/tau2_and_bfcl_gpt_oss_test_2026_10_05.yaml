@@ -1,0 +1,21 @@
+# Draft workflow (agent-written, 2026-10-05): the collection half of the end-to-end test of the
+# two new benchmark environments on the agent model the project runs, gpt-oss-120b, walked with
+# --debug (three tasks per split, six steps per task). It checks what the Qwen3.6 test of
+# draft/tau2_and_bfcl_probe_test_2026_10_05 could not: tau2's telecom user simulator calls its
+# tools through the server's function calling, which vLLM serves for gpt-oss with no extra flag.
+workflow: [sample, score]
+
+common:
+  models: {agent: gpt_oss_120b}
+
+tau2_test_2026_10_05_gpt_oss_120b_collection:
+  meta:   {notes: "tau2 collection test on gpt-oss-120b: the three domains' test splits"}
+  data:   {env: tau2, instructions: v1}
+  sample: {split: [airline_test, retail_test, telecom_test], seeds: [42], pieces: 3, replicas: 1}
+  score:  {by_seed: true}
+
+bfcl_test_2026_10_05_gpt_oss_120b_collection:
+  meta:   {notes: "BFCL multi-turn collection test on gpt-oss-120b: the four categories"}
+  data:   {env: bfcl, instructions: v1}
+  sample: {split: [multi_turn_base, multi_turn_miss_func, multi_turn_miss_param, multi_turn_long_context], seeds: [42], max_steps: 100, pieces: 3, replicas: 1}
+  score:  {by_seed: true}

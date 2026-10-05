@@ -68,6 +68,15 @@ class TrajectoryRecordTest(unittest.TestCase):
         self.assertEqual(on_disk["version"][0], tr.FORMAT_VERSION)
         self.assertEqual(on_disk["n_inject"].to_list(), [0] * 6, "an absent n_inject reads as 0")
 
+    def test_a_task_id_with_pattern_characters_reads_back(self):
+        """A record's file name is its task id, and tau2's telecom ids hold [ ], | and :; the
+        reader takes the name as it is, never as a pattern."""
+        task_id = "telecom_[mms_issue]airplane_mode_on|bad_wifi_calling[PERSONA:Hard]"
+        w = _write_record(self.dir, task_id)
+        on_disk = tr.read(tr.record_path(self.dir, task_id, 42))
+        assert_frame_equal(on_disk.drop("ts"), w.frame().drop("ts"))
+        self.assertEqual(tr.read_dir(self.dir, [(task_id, 42)])["task_id"].drop_nulls().unique().to_list(), [task_id])
+
     def test_the_claim_is_exclusive(self):
         first = tr.open_record(self.dir, "t1", 42)
         self.assertIsNotNone(first)
