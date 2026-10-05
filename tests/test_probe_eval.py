@@ -243,11 +243,14 @@ class FiredExampleIdsTest(unittest.TestCase):
             (d / "done.json").write_text("{}")
         return d
 
-    def test_the_fired_rows_of_every_risk_target(self):
+    def test_the_test_fired_rows_of_every_risk_target(self):
         fields, fires = pe.report_classifier("ctool", _predictions(), _cfg(), None, LABELS, _Beats())
         d = self._eval_dir({**fields, "probe_kind": "classifier"}, fires)
-        self.assertEqual(pe.fired_example_ids(d), set(fires["example_id"].to_list()))
-        self.assertGreater(len(pe.fired_example_ids(d)), 0)
+        test_ids = set(fires.filter(pl.col("split") == "test")["example_id"].to_list())
+        self.assertEqual(pe.fired_example_ids(d), test_ids)
+        self.assertGreater(len(test_ids), 0)
+        val_ids = set(fires.filter(pl.col("split") == "val")["example_id"].to_list())
+        self.assertTrue(val_ids.isdisjoint(pe.fired_example_ids(d)), "the generator report reads no val row")
 
     def test_refusals(self):
         fields, fires = pe.report_classifier("ctool", _predictions(), _cfg(), None, LABELS, _Beats())

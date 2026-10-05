@@ -86,7 +86,7 @@ def read_report(run_dir: Path) -> tuple[dict, pl.DataFrame | None]:
 
 
 def fired_example_ids(run_dir: Path) -> set[str]:
-    """The example ids a classifier eval run fired on, over every risk target: the rows the generator report scores, so the rows a generator's train run writes calls for. Refuses an eval run with no done.json, a report that is not a classifier's, and an imported classifier eval, which holds no fired rows."""
+    """The test-split example ids a classifier eval run fired on, over every risk target: the rows the generator report scores (it joins the test predictions to the test fires), so the rows a generator's train run writes calls for. Refuses an eval run with no done.json, a report that is not a classifier's, and an imported classifier eval, which holds no fired rows."""
     run_dir = Path(run_dir)
     if not (run_dir / "done.json").exists():
         raise ValueError(f"{run_dir}: the classifier eval has no done.json")
@@ -98,7 +98,9 @@ def fired_example_ids(run_dir: Path) -> set[str]:
         raise ValueError(
             f"{run_dir}: an import of {fields.get('imported_from')} holds no fired rows; name a "
             "fitted classifier eval")
-    return set(fires["example_id"].to_list()) if fires is not None else set()
+    if fires is None:
+        return set()
+    return set(fires.filter(pl.col("split") == "test")["example_id"].to_list())
 
 
 def softmax(logits: "np.ndarray", temperature: float) -> "np.ndarray":
