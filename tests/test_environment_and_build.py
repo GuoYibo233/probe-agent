@@ -277,6 +277,29 @@ class Tau2CallSyntaxTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.env.changes_state("cancel_reservation(reservation_id='X')")
 
+    def test_the_text_before_a_call_list_is_the_messages_content(self):
+        """What a reply says before its call list rides on the call message; a reply that is one
+        call list, fenced or not, says nothing before it (the fence opener is not text)."""
+        from data.environments import tau2 as tau2_module
+        for raw in ("```json\nget_order_details(order_id='#W1')\n```", "get_order_details(order_id='#W1')",
+                    "  [get_order_details(order_id='#W1')]  "):
+            source = tau2_module._unfenced(raw)
+            calls_source, _, start = tau2_module._reply_calls(raw)
+            self.assertIsNone(tau2_module._message_text_before_calls(raw, source, calls_source, start), raw)
+        mixed = "Let me check.\n[get_order_details(order_id='#W1')]\nand more"
+        source = tau2_module._unfenced(mixed)
+        calls_source, _, start = tau2_module._reply_calls(mixed)
+        self.assertEqual(tau2_module._message_text_before_calls(mixed, source, calls_source, start), "Let me check.")
+
+    def test_the_user_simulators_visible_text(self):
+        """The agent reads what follows a closing think tag, nothing from an unclosed one (the
+        thinking quotes the hidden scenario), and the whole text when there is no tag."""
+        from data.environments import tau2 as tau2_module
+        self.assertEqual(tau2_module._visible_text("<think>the scenario says X</think>\n\nHi, my phone broke."),
+                         "Hi, my phone broke.")
+        self.assertEqual(tau2_module._visible_text("<think>the scenario says X and"), "")
+        self.assertEqual(tau2_module._visible_text("Hi, my phone broke."), "Hi, my phone broke.")
+
 
 class BFCLCallSyntaxTest(unittest.TestCase):
     """BFCL's prompting-mode call format, read the way its decoder reads a reply."""
@@ -306,6 +329,20 @@ class BFCLCallSyntaxTest(unittest.TestCase):
             with self.subTest(call=call):
                 tool, args, _ = self.env.split_args(call)
                 self.assertEqual(self.env.split_args(self.env.build_call(tool, args))[:2], (tool, args))
+
+    def test_the_reader_reads_what_the_decoder_resolves(self):
+        """An argument value BFCL's resolve_ast_by_type turns into a value is read; one it
+        raises on (an attribute, an f-string, a set, a comparison) and one it would hand to eval
+        (arithmetic, a lambda) count as no call, so a step the build labels is a step that ran."""
+        for call in ("f(x=-1, y=2.5)", "f(x=some_name)", "f(x=g(1))", "f(x=g(k=[1, 2]))", "f(x=d['k'])",
+                     "f(x=[1, {'a': None}], y=(True, 'b'))", "[f(x=1), g(y='z')]"):
+            with self.subTest(call=call):
+                self.assertIsNotNone(self.env.split_args(call), call)
+        for no_call in ("[mv(source=file.name, destination='b')]", "[f(x=f'{a}')]", "[f(x={1, 2})]",
+                        "[f(x=a > b)]", "[f(x=1 + 2)]", "[f(x=lambda: 1)]", "[f(x=-'a')]", "[f(x=[1, a.b])]",
+                        "[f(x=g(k=1 + 2))]"):
+            with self.subTest(no_call=no_call):
+                self.assertIsNone(self.env.split_args(no_call), no_call)
 
     def test_changes_state_reads_the_write_table(self):
         self.assertTrue(self.env.changes_state("cd()"))

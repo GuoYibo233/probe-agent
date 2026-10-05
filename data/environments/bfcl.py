@@ -102,14 +102,42 @@ def _call_close(text: str, start: int) -> int | None:
     return None
 
 
+def _bfcl_reads(node: ast.AST) -> bool:
+    """Whether BFCL's resolve_ast_by_type turns this argument node into a value without running eval.
+
+    Its cases, read off bfcl_eval/model_handler/utils.py: a constant; a unary operator over a
+    numeric constant (it negates the operand's value); a list, tuple or dict of such values; a
+    bare name (read as a string); a nested call (its own text when it has no keywords, else its
+    keyword values resolved the same way); a subscript (its own text). Everything else makes the
+    decoder raise, which ends the turn. Two cases it feeds to eval, an arithmetic expression and
+    a lambda, are read as "no call" here, the third difference from BFCL's harness that
+    `step` names.
+    """
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.UnaryOp):
+        return isinstance(node.operand, ast.Constant) and isinstance(node.operand.value, (int, float, complex))
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return all(_bfcl_reads(e) for e in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(k is not None and _bfcl_reads(k) and _bfcl_reads(v) for k, v in zip(node.keys, node.values))
+    if isinstance(node, (ast.Name, ast.Subscript)):
+        return True
+    if isinstance(node, ast.Call):
+        return all(_bfcl_reads(k.value) for k in node.keywords)
+    return False
+
+
 def _decoded(text: str) -> tuple[str, int, list[ast.Call]] | None:
-    """A reply read the way BFCL's default_decode_execute_prompting reads it: the ends stripped of backticks, newlines and spaces, wrapped in [ ] when it is not, and parsed as a list of calls to bare names.
+    """A reply read the way BFCL's default_decode_execute_prompting reads it: the ends stripped of backticks, newlines and spaces, wrapped in [ ] when it is not, and parsed as a list of calls to bare names whose keyword values BFCL's decoder resolves (`_bfcl_reads`).
 
     Returns the wrapped source, the index in `text` where the source's first character sits
     (one less when an opening bracket was added), and the calls; None when the text is no such
     list, an empty list included. A call to a dotted name (fs.ls()) counts as no call: BFCL's
     decoder reads it, but every function of the benchmark has a bare name, so the build skips
-    such a step.
+    such a step. This is the one reader of a reply: `step`, `speculate` and `judge` run BFCL's
+    decoder only on a text this function reads (`_decode`), so a step the build labels as a
+    call is a step whose call ran.
     """
     raw = text or ""
     stripped = raw.strip(STRIP_CHARS)
@@ -129,7 +157,16 @@ def _decoded(text: str) -> tuple[str, int, list[ast.Call]] | None:
     for node in body.elts:
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
             return None
+        if not all(_bfcl_reads(k.value) for k in node.keywords):
+            return None
     return source, lead, body.elts
+
+
+def _decode(decode_execute, text: str) -> list:
+    """BFCL's decoder gated by `_decoded`: the decoded calls of a text `_decoded` reads, else an empty list (BFCL's own "no call, the turn ends"); one answer for the step, the speculation and the judge."""
+    if _decoded(text) is None:
+        return []
+    return decode_execute(text, has_tool_call_tag=False)
 
 
 def _canonical(node: ast.AST, source: str) -> str:
@@ -168,13 +205,14 @@ def _load(home: str) -> SimpleNamespace:
 
 
 class _PromptingHandler:
-    """The one handler method BFCL's multi-turn evaluation calls: the prompting-mode decoder every locally served model uses (OSSHandler.decode_execute)."""
+    """The one handler method BFCL's multi-turn evaluation calls: the prompting-mode decoder every locally served model uses (OSSHandler.decode_execute), gated by `_decoded` as the step was (`_decode`), so the judge replays the calls the step ran."""
 
     def __init__(self, decode_execute) -> None:
         self._decode_execute = decode_execute
 
     def decode_execute(self, result, has_tool_call_tag):
-        return self._decode_execute(result, has_tool_call_tag)
+        del has_tool_call_tag
+        return _decode(self._decode_execute, result)
 
 
 class BFCL(Environment):
@@ -327,18 +365,21 @@ class BFCL(Environment):
     def step(self, reply_text: str) -> StepObservation:
         """One model reply, as one step of BFCL's inference_multi_turn_prompting: calls are run and their results returned; a reply that decodes to no call ends the user's turn and the next turn's message comes back, or the task ends after the last turn; more than MAXIMUM_STEP_LIMIT steps in one turn end the task.
 
-        Two differences from BFCL's harness. The results come back as one user message in BFCL's
-        API-prompting form (format_execution_results_prompting), because this loop's
+        Three differences from BFCL's harness. The results come back as one user message in
+        BFCL's API-prompting form (format_execution_results_prompting), because this loop's
         conversation holds no tool role, where BFCL's handler for a locally served model appends
-        one tool message per result. And the loop's own step cap (sample.max_steps) can end a
+        one tool message per result. The loop's own step cap (sample.max_steps) can end a
         task BFCL would continue: judge then scores the turns reached, a partial last turn as a
-        turn, so a setting gives the cap room for every turn (100 in the test settings).
+        turn, so a setting gives the cap room for every turn (100 in the test settings). And a
+        reply whose argument BFCL's decoder would hand to eval (an arithmetic expression, a
+        lambda) counts as no call and ends the turn, here, in `speculate` and in `judge` alike
+        (`_decode`), so that the build's reader and the run agree on every step.
         """
         b = _load(self.home)
         self._responses[self._turn].append(reply_text)
         action = (reply_text or "").strip()
         try:
-            decoded = b.decode_execute(reply_text, has_tool_call_tag=False)
+            decoded = _decode(b.decode_execute, reply_text)
             turn_ends = len(decoded) == 0 or (len(decoded) == 1 and len(decoded[0]) == 0)
         except Exception:
             decoded, turn_ends = [], True
@@ -372,7 +413,7 @@ class BFCL(Environment):
         t0 = time.clock_gettime(time.CLOCK_MONOTONIC)
         written = self.complete_call(call) or (call or "")
         try:
-            decoded = b.decode_execute(written, has_tool_call_tag=False)
+            decoded = _decode(b.decode_execute, written)
         except Exception:
             decoded = []
         if not decoded or not decoded[0]:
