@@ -8,7 +8,9 @@
 .venv/
 **/.venv/
 external/appworld
+external/bfcl
 external/probe-env
+external/tau2-bench
 external/vllm-env
 
 # third-party benchmark clones under envs/: each has its own .git, restored by clone
