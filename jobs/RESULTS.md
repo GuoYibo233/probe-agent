@@ -3,7 +3,7 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
-| `eval-54f6b2d560ec` | 2026-10-05 18:56 | eval | draft/full_history/collection_2026_10_01_full_history_cgen_qwen3_0pt6b_full | `32e5612` | failed | - | - |
+| `eval-54f6b2d560ec` | 2026-10-05 18:57 | eval | draft/full_history/collection_2026_10_01_full_history_cgen_qwen3_0pt6b_full | `539c916` | ok | - | report.md |
 | `train-cd96d5598d1d` | 2026-10-05 18:52 | train | draft/full_history/collection_2026_10_01_full_history_cgen_qwen3_0pt6b_full | `050a8fa` | ok | objective=0.890625 val_ce=2.020143508911133 val_tool_ok=0.265625 val_params_all_ok=0.109375 val_full_call_ok=0.109375 gen_n=64 | - |
 | `eval-35bd2584af60` | 2026-10-05 18:51 | eval | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `050a8fa` | ok | - | report.md |
 | `build-beed9c8ab9b7` | 2026-10-05 18:48 | build | draft/full_history/collection_2026_10_01_full_history_ctool_qwen3_0pt6b_full | `050a8fa` | ok | - | report.md |
