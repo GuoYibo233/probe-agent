@@ -167,6 +167,29 @@ session): the full-history probe trains for 3 passes, the draft setting's value.
 per-pass copies make the pass count a cheap question: one three-pass run gives all three
 answers.
 
+### 4.5 The full-history probes replace the old ones
+
+Decided 2026-10-05 (gyb), after the first comparison on the same collection (0.6B
+classifier, pass 3, test split, 10% wrong-fire rate): full history coverage 0.737
+[0.721, 0.753] against the three-round control's 0.682 [0.665, 0.698], accuracy when fired
+0.903 against 0.907 (evals 4319ab69d9c3 and 97c0045b450f). From now on every probe is a
+full-history probe; the August imports and the three-round settings are not launched
+again and stay in the setting files as the record of the runs they made.
+
+Open, for gyb: injection needs a whole-call generator trained on the same build as the
+classifier. The generator's prediction step writes a call for every example row of val and
+test (1,374,660 rows on build d925152ff254 less the 376,967 train rows, per weight copy),
+while its report reads only the test rows the classifier fired on (at most about 12,000 at
+the two risk targets). Three ways:
+
+- **The generator predicts only the rows its report reads (recommended)**: the classifier
+  eval the generator already names for its threshold also names the rows to write calls
+  for; hours per copy instead of weeks; a code change in the trainer and the stage table.
+- **Predict every row as today**: no code; about one million generations per copy, weeks on
+  one card at the measured debug speed.
+- **No offline generator numbers**: the generator is judged only in live runs; no code
+  beyond an empty prediction list; the plan loses the offline call accuracy.
+
 ## 5. Measurements before the settings are final
 
 1. **Text length against the clip.** On the new collection, build with every round and a
