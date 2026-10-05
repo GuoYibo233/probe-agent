@@ -282,3 +282,27 @@
     train run writes calls for; a classifier train, an eval and an inject run never call it, and the only
     generator train made under 050a8fa (debug cd96d5598d1d) had a classifier eval with no fired rows,
     so every run made under 050a8fa is what HEAD produces
+- stage: train
+  era: 2
+  from: 32e5612e23cb8aad1692bd97e70cbfc17e20cdc5
+  same: 2badf694dba51635f2b67791017a328be106c0d3
+  date: 2026-10-05
+  why: The one change since 32e5612 holds the eval's prediction-file columns row by row instead of requiring
+    at least one row; every eval that finished under 32e5612 reads the same report, a prediction file
+    with no rows was refused and is now reported, and train and inject never run this check
+- stage: eval
+  era: 2
+  from: 32e5612e23cb8aad1692bd97e70cbfc17e20cdc5
+  same: 2badf694dba51635f2b67791017a328be106c0d3
+  date: 2026-10-05
+  why: The one change since 32e5612 holds the eval's prediction-file columns row by row instead of requiring
+    at least one row; every eval that finished under 32e5612 reads the same report, a prediction file
+    with no rows was refused and is now reported, and train and inject never run this check
+- stage: inject
+  era: 4
+  from: 32e5612e23cb8aad1692bd97e70cbfc17e20cdc5
+  same: 2badf694dba51635f2b67791017a328be106c0d3
+  date: 2026-10-05
+  why: The one change since 32e5612 holds the eval's prediction-file columns row by row instead of requiring
+    at least one row; every eval that finished under 32e5612 reads the same report, a prediction file
+    with no rows was refused and is now reported, and train and inject never run this check
