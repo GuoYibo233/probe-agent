@@ -271,3 +271,59 @@
   why: Since 0a81553 the record reader hands Polars a jsonl file's bytes instead of its path, so a file
     name holding [ ] is no longer expanded as a pattern; every record that read before reads to the same
     frame, so a build writes the same examples
+- stage: sample
+  era: 2
+  from: 28bd99427f04dbe9c020e2a84c4a4b818132d03f
+  same: 1a1fd184494157ebce4cf4ba7fd631014d5188b1
+  date: 2026-10-05
+  why: Since 28bd994 the files this stage reads gained two contract methods whose defaults AppWorld keeps
+    (instructions(variant) returns INSTRUCTIONS[variant] as it stands, bind_agent keeps nothing), the
+    loop takes each task's developer message from instructions() and binds the agent endpoint once, and
+    the record reader hands Polars a jsonl file's bytes instead of its path; an AppWorld run's prompts,
+    records and outputs are unchanged
+- stage: inject
+  era: 4
+  from: 28bd99427f04dbe9c020e2a84c4a4b818132d03f
+  same: 1a1fd184494157ebce4cf4ba7fd631014d5188b1
+  date: 2026-10-05
+  why: Since 28bd994 the files this stage reads gained two contract methods whose defaults AppWorld keeps
+    (instructions(variant) returns INSTRUCTIONS[variant] as it stands, bind_agent keeps nothing), the
+    loop takes each task's developer message from instructions() and binds the agent endpoint once, and
+    the record reader hands Polars a jsonl file's bytes instead of its path; an AppWorld run's prompts,
+    records and outputs are unchanged
+- stage: build
+  era: 4
+  from: 28bd99427f04dbe9c020e2a84c4a4b818132d03f
+  same: 1a1fd184494157ebce4cf4ba7fd631014d5188b1
+  date: 2026-10-05
+  why: Since 28bd994 the files this stage reads gained two contract methods whose defaults AppWorld keeps
+    (instructions(variant) returns INSTRUCTIONS[variant] as it stands, bind_agent keeps nothing), which
+    this stage never calls, and the record reader hands Polars a jsonl file's bytes instead of its path,
+    which reads every readable file to the same frame; an AppWorld run's output is unchanged
+- stage: train
+  era: 2
+  from: 28bd99427f04dbe9c020e2a84c4a4b818132d03f
+  same: 1a1fd184494157ebce4cf4ba7fd631014d5188b1
+  date: 2026-10-05
+  why: Since 28bd994 the files this stage reads gained two contract methods whose defaults AppWorld keeps
+    (instructions(variant) returns INSTRUCTIONS[variant] as it stands, bind_agent keeps nothing), which
+    this stage never calls, and the record reader hands Polars a jsonl file's bytes instead of its path,
+    which reads every readable file to the same frame; an AppWorld run's output is unchanged
+- stage: eval
+  era: 2
+  from: 28bd99427f04dbe9c020e2a84c4a4b818132d03f
+  same: 1a1fd184494157ebce4cf4ba7fd631014d5188b1
+  date: 2026-10-05
+  why: Since 28bd994 the files this stage reads gained two contract methods whose defaults AppWorld keeps
+    (instructions(variant) returns INSTRUCTIONS[variant] as it stands, bind_agent keeps nothing), which
+    this stage never calls, and the record reader hands Polars a jsonl file's bytes instead of its path,
+    which reads every readable file to the same frame; an AppWorld run's output is unchanged
+- stage: score
+  era: 1
+  from: 28bd99427f04dbe9c020e2a84c4a4b818132d03f
+  same: 1a1fd184494157ebce4cf4ba7fd631014d5188b1
+  date: 2026-10-05
+  why: Since 28bd994 the files this stage reads gained two contract methods whose defaults AppWorld keeps
+    (instructions(variant) returns INSTRUCTIONS[variant] as it stands, bind_agent keeps nothing), which
+    this stage never calls, and the record reader hands Polars a jsonl file's bytes instead of its path,
+    which reads every readable file to the same frame; an AppWorld run's output is unchanged

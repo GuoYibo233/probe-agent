@@ -3,16 +3,21 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
-| `train-9c1c5e3479d5` | 2026-10-05 11:36 | train | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_ctool_qwen3_0pt6b_full | `419be76` | launching | - | - |
-| `train-b934e43e8075` | 2026-10-05 11:35 | train | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_cgen_qwen3_0pt6b_full | `419be76` | launching | - | - |
+| `score-3d4673fc037f` | 2026-10-05 11:58 | score | draft/tau2_and_bfcl_inject_test_2026_10_05/tau2_test_2026_10_05_probe_p1_e1_second_cut | `1a1fd18` | ok | success=0.0 base_success=0.0 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=9 | report.md |
+| `inject-a1ef2606221e` | 2026-10-05 11:51 | inject | draft/tau2_and_bfcl_inject_test_2026_10_05/tau2_test_2026_10_05_probe_p1_e1_second_cut | `1a1fd18` | ok | - | - |
+| `eval-bbe10608ceaf` | 2026-10-05 11:50 | eval | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_ctool_qwen3_0pt6b_full | `1a1fd18` | ok | - | report.md |
+| `eval-19f596a4ea94` | 2026-10-05 11:50 | eval | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_cgen_qwen3_0pt6b_full | `1a1fd18` | ok | - | report.md |
+| `score-76eeb61a9924` | 2026-10-05 11:50 | score | draft/tau2_and_bfcl_gpt_oss_test_2026_10_05/bfcl_test_2026_10_05_gpt_oss_120b_collection | `1a1fd18` | ok | success=0.0 n_records=12 | report.md |
+| `score-5c6cc1abdc6a` | 2026-10-05 11:50 | score | draft/tau2_and_bfcl_gpt_oss_test_2026_10_05/tau2_test_2026_10_05_gpt_oss_120b_collection | `1a1fd18` | ok | success=0.1111 n_records=9 | report.md |
+| `sample-aa07380fb2f3` | 2026-10-05 11:41 | sample | draft/tau2_and_bfcl_gpt_oss_test_2026_10_05/bfcl_test_2026_10_05_gpt_oss_120b_collection | `1a1fd18` | ok | - | - |
+| `sample-802ef60c7aec` | 2026-10-05 11:38 | sample | draft/tau2_and_bfcl_gpt_oss_test_2026_10_05/tau2_test_2026_10_05_gpt_oss_120b_collection | `1a1fd18` | ok | - | - |
+| `train-9c1c5e3479d5` | 2026-10-05 11:36 | train | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_ctool_qwen3_0pt6b_full | `419be76` | ok | objective=0.9821428571428571 val_wacc=0.017857142857142856 val_lastcut_acc=0.0 | - |
+| `train-b934e43e8075` | 2026-10-05 11:35 | train | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_cgen_qwen3_0pt6b_full | `419be76` | ok | objective=1.0 val_ce=1.2339800198872883 val_tool_ok=0.10714285714285714 val_params_all_ok=0.0 val_full_call_ok=0.0 gen_n=56 | - |
 | `build-7fa7954d55d0` | 2026-10-05 11:34 | build | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_ctool_qwen3_0pt6b_full | `419be76` | ok | - | report.md |
 | `sample-4cae8909bbae` | 2026-10-05 11:25 | sample | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_ctool_qwen3_0pt6b_full | `419be76` | ok | - | - |
 | `score-0589e1a079c9` | 2026-10-05 11:22 | score | draft/tau2_and_bfcl_inject_test_2026_10_05/bfcl_test_2026_10_05_probe_p1_e1_second_cut | `8aef2e9` | ok | success=0.1667 base_success=0.0833 delta_success=0.0833 spec_tool_agree=0.0208 spec_call_agree=0.0 n_records=12 | report.md |
 | `inject-27de0419a1de` | 2026-10-05 09:17 | inject | draft/tau2_and_bfcl_inject_test_2026_10_05/bfcl_test_2026_10_05_probe_p1_e1_second_cut | `8aef2e9` | ok | - | - |
-| `inject-a1ef2606221e` | 2026-10-05 09:16 | inject | draft/tau2_and_bfcl_inject_test_2026_10_05/tau2_test_2026_10_05_probe_p1_e1_second_cut | `8aef2e9` | killed | - | - |
-| `eval-bbe10608ceaf` | 2026-10-05 09:15 | eval | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_ctool_qwen3_0pt6b_full | `8aef2e9` | ok | - | report.md |
 | `eval-06b6de063228` | 2026-10-05 09:15 | eval | draft/tau2_and_bfcl_probe_test_2026_10_05/bfcl_test_2026_10_05_ctool_qwen3_0pt6b_full | `8aef2e9` | ok | - | report.md |
-| `eval-19f596a4ea94` | 2026-10-05 09:15 | eval | draft/tau2_and_bfcl_probe_test_2026_10_05/tau2_test_2026_10_05_cgen_qwen3_0pt6b_full | `8aef2e9` | ok | - | report.md |
 | `eval-4cb1531488ae` | 2026-10-05 09:15 | eval | draft/tau2_and_bfcl_probe_test_2026_10_05/bfcl_test_2026_10_05_cgen_qwen3_0pt6b_full | `8aef2e9` | ok | - | report.md |
 | `train-2af61799bb72` | 2026-10-05 09:10 | train | draft/tau2_and_bfcl_probe_test_2026_10_05/bfcl_test_2026_10_05_cgen_qwen3_0pt6b_full | `8aef2e9` | ok | objective=0.5 val_ce=2.464451313018799 val_tool_ok=0.625 val_params_all_ok=0.5 val_full_call_ok=0.5 gen_n=8 | - |
 | `build-60a37e74fd4c` | 2026-10-05 09:08 | build | draft/tau2_and_bfcl_probe_test_2026_10_05/bfcl_test_2026_10_05_ctool_qwen3_0pt6b_full | `8aef2e9` | ok | - | report.md |
@@ -456,9 +461,10 @@
 
 | stage | task | card | ok | failed for memory | memory | median speed | newest run | newest memory failure |
 |---|---|---|---|---|---|---|---|---|
-| inject | debug=True models.agent=qwen3pt6_35b_a3b probe_score.backbone=qwen3_0pt6b probe_score.tuning=full probe_gen.backbone=qwen3_0pt6b probe_gen.tuning=full | NVIDIA RTX A6000 47 GiB | 1 | 0 | probe service peak 2.24 GiB | 14.8 task/h | `inject-a1ef2606221e` | - |
-| train | debug=True models.probe=qwen3_0pt6b probe.method=cgen probe.tuning=full probe.lora_r=16 train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=False train.import_from=None | NVIDIA RTX A6000 47 GiB | 2 | 0 | peak 47.16 GiB | 95.2 step/h | `train-2af61799bb72` | - |
-| train | debug=True models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=False train.import_from=None | NVIDIA RTX A6000 47 GiB | 5 | 0 | peak 44.11 GiB | 69.1 step/h | `train-cf0a27a44ba7` | - |
+| inject | debug=True models.agent=qwen3pt6_35b_a3b probe_score.backbone=qwen3_0pt6b probe_score.tuning=full probe_gen.backbone=qwen3_0pt6b probe_gen.tuning=full | NVIDIA RTX A6000 47 GiB | 2 | 0 | probe service peak 2.24 GiB | 27.8 task/h | `inject-a1ef2606221e` | - |
+| train | debug=True models.probe=qwen3_0pt6b probe.method=cgen probe.tuning=full probe.lora_r=16 train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=False train.import_from=None | NVIDIA RTX A6000 47 GiB | 3 | 0 | peak 47.16 GiB | 79.5 step/h | `train-b934e43e8075` | - |
+| train | debug=True models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=8192 train.events_per_mb=4 train.grad_ckpt=False train.import_from=None | NVIDIA RTX A6000 47 GiB | 6 | 0 | peak 44.11 GiB | 73.0 step/h | `train-9c1c5e3479d5` | - |
+| sample | debug=True models.agent=gpt_oss_120b cards_per_agent_server=1 | NVIDIA H200 NVL 140 GiB | 1 | 0 | weights 61.43 + KV cache 63.43 GiB, concurrency 12.52x | 82.0 task/h | `sample-802ef60c7aec` | - |
 | train | debug=False models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 3 | 0 | peak 44.0 GiB | 773.1 step/h | `train-4d927b044d3e` | - |
 | sample | debug=False models.agent=qwen3pt6_35b_a3b cards_per_agent_server=1 | NVIDIA H100 NVL 93 GiB | 0 | 1 | weights 64.69 + KV cache 16.06 GiB, concurrency 6.23x | - | `sample-24da51117512` | `sample-24da51117512` "(EngineCore pid=3264492) ValueError: max_num_seqs (1024) exceeds available Mamba cache blocks (797). Each decode sequence requires one Mamba cache block, so CUDA graph capture cannot proceed. Please lower max_num_seqs to at most 797 or increase gpu_memory_utilization." |
 | train | debug=True models.probe=qwen3_0pt6b probe.method=ctool probe.tuning=full probe.lora_r=16 train.max_len=32768 train.events_per_mb=4 train.grad_ckpt=True train.import_from=None | NVIDIA H100 NVL 93 GiB | 1 | 0 | peak 12.6 GiB | 92.4 step/h | `train-4a9594541c2d` | - |
