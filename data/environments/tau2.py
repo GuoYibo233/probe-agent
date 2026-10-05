@@ -56,6 +56,14 @@ USER_TEMPERATURE = 0.0
 # (DEFAULT_LLM_NL_ASSERTIONS), a paid model; here it is the agent model on its own server at the
 # same temperature, asked for a JSON object because the evaluator reads the reply with json.loads.
 NL_JUDGE_TEMPERATURE = 0.0
+# tau2's user simulator and NL judge are non-reasoning chat models (gpt-4.1). On a reasoning
+# model both requests ask for no thinking where the serving format has a switch (enable_thinking
+# false, read by Qwen's chat templates) and for the lowest tier where it has none (reasoning_effort
+# low, gpt-oss, whose harmony format refuses "none"); each server ignores the field it does not
+# read. A Qwen3.6 customer that thought freely ran past litellm's 600 s timeout on one turn in a
+# 2026-10-05 debug run. Both fields ride in extra_body, which litellm sends as it is; given as
+# arguments of their own, litellm dropped reasoning_effort for a model name it does not know.
+NO_THINKING = {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}, "reasoning_effort": "low"}}
 # The tool that hands the conversation to a human agent. tau2 types it GENERIC, as it changes no
 # database, but no undo takes the hand-off back, so it is never tried early.
 HANDOFF_TOOL = "transfer_to_human_agents"
@@ -380,13 +388,14 @@ class Tau2(Environment):
         config = t.TextRunConfig(
             domain=domain, agent=AGENT_NAME, user=USER_NAME,
             llm_user=f"{USER_PROVIDER}/{self._served_model_name}",
-            llm_args_user={"temperature": USER_TEMPERATURE, "api_base": self._base_url, "api_key": "EMPTY"},
+            llm_args_user={"temperature": USER_TEMPERATURE, "api_base": self._base_url, "api_key": "EMPTY",
+                           **copy.deepcopy(NO_THINKING)},
         )
         # tau2's evaluator reads its judge from these two module names at every call.
         t.evaluator_nl_assertions.DEFAULT_LLM_NL_ASSERTIONS = f"{USER_PROVIDER}/{self._served_model_name}"
         t.evaluator_nl_assertions.DEFAULT_LLM_NL_ASSERTIONS_ARGS = {
             "temperature": NL_JUDGE_TEMPERATURE, "api_base": self._base_url, "api_key": "EMPTY",
-            "response_format": {"type": "json_object"}}
+            "response_format": {"type": "json_object"}, **copy.deepcopy(NO_THINKING)}
         orch = t.build_text_orchestrator(config, task, seed=seed)
         self._orch, self._task, self._domain = orch, task, domain
         self._env_kwargs = t.build_env_kwargs(config, task)
